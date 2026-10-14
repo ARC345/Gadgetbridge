@@ -2561,6 +2561,19 @@
 <string name="qore_workout_resume">Resume workout</string>
 <string name="qore_workout_stop">Stop and save workout</string>
 <string name="qore_workout_stop_summary">Ends the workout on the band and saves it to the workout list</string>
+<string name="qore_workout_started">Workout started</string>
+<string name="qore_workout_paused">Workout paused</string>
+<string name="qore_workout_resumed">Workout resumed</string>
+<string name="qore_workout_saved">Workout saved</string>
+<string name="qore_workout_already_running">A workout is already running</string>
+<string name="qore_workout_none_running">No workout is running</string>
+<string name="qore_workout_status_title">Status</string>
+<string name="qore_workout_status_idle">Not running. Pick a sport, then tap Start workout.</string>
+<string name="qore_workout_status_running">%1$s · running · %2$s</string>
+<string name="qore_workout_status_running_hr">%1$s · running · %2$s · %3$d bpm</string>
+<string name="qore_workout_status_paused">%1$s · paused · %2$s</string>
+<string name="qore_workout_status_saved">Saved %1$s, %2$s. Pick a sport, then tap Start workout.</string>
+<string name="qore_workout_stop_confirm">Stop the workout on the band and save it?</string>
     <string name="devicetype_colmi_r03" translatable="false">Colmi R03</string>
     <string name="devicetype_colmi_r06" translatable="false">Colmi R06</string>
     <string name="devicetype_colmi_r07" translatable="false">Colmi R07</string>
