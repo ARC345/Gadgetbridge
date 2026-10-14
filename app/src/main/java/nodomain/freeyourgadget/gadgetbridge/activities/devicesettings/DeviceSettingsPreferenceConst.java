@@ -311,6 +311,8 @@ public class DeviceSettingsPreferenceConst {
     public static final String PREF_PHONE_WORKOUT_ACTIVE_SPORT_NAME = "phone_workout_active_sport_name";
     public static final String PREF_PHONE_WORKOUT_ELAPSED_SECONDS = "phone_workout_elapsed_seconds";
     public static final String PREF_PHONE_WORKOUT_HEART_RATE = "phone_workout_heart_rate";
+    // Record the phone's GPS into outdoor workouts started from the phone
+    public static final String PREF_PHONE_WORKOUT_GPS = "phone_workout_gps";
     public static final String PHONE_WORKOUT_STATE_IDLE = "idle";
     public static final String PHONE_WORKOUT_STATE_RUNNING = "running";
     public static final String PHONE_WORKOUT_STATE_PAUSED = "paused";

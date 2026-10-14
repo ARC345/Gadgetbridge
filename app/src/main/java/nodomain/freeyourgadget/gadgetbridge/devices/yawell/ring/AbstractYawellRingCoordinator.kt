@@ -19,6 +19,7 @@ package nodomain.freeyourgadget.gadgetbridge.devices.yawell.ring
 import de.greenrobot.dao.AbstractDao
 import de.greenrobot.dao.Property
 import nodomain.freeyourgadget.gadgetbridge.R
+import nodomain.freeyourgadget.gadgetbridge.activities.devicesettings.DeviceSettingsPreferenceConst
 import nodomain.freeyourgadget.gadgetbridge.activities.devicesettings.DeviceSpecificSettingsScreen
 import nodomain.freeyourgadget.gadgetbridge.activities.devicesettings.dsl.DeviceSettingsSpec
 import nodomain.freeyourgadget.gadgetbridge.activities.devicesettings.dsl.components.heartrateMeasurementInterval
@@ -275,6 +276,27 @@ abstract class AbstractYawellRingCoordinator : AbstractBLEDeviceCoordinator() {
                 min = 1,
                 max = 5,
                 defaultValue = 3,
+            )
+        }
+        screen(
+            key = DeviceSpecificSettingsScreen.WORKOUT.key,
+            title = R.string.qore_workout_recording_title,
+            icon = R.drawable.ic_activity_exercise,
+            visibleWhen = { supportsPhoneStartedWorkouts(device) },
+        ) {
+            switchSetting(
+                key = DeviceSettingsPreferenceConst.PREF_PHONE_WORKOUT_GPS,
+                title = R.string.qore_workout_gps_title,
+                summary = R.string.qore_workout_gps_summary,
+                icon = R.drawable.ic_gps_location,
+                defaultValue = true,
+            )
+            switchSetting(
+                key = DeviceSettingsPreferenceConst.PREF_WORKOUT_START_ON_PHONE,
+                title = R.string.qore_workout_opentracks_title,
+                summary = R.string.qore_workout_opentracks_summary,
+                icon = R.drawable.ic_map,
+                defaultValue = false,
             )
         }
         screen(
