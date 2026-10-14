@@ -69,7 +69,7 @@ public class PebbleQore2Coordinator extends AbstractYawellRingCoordinator {
 
     /**
      * Workouts started from the phone are saved with a FIT file holding the per-second heart
-     * rate (and the phone's GPS outdoors), so charts and the map read the track from it.
+     * rate and the phone's GPS, so charts and the map read the track from it.
      */
     @Override
     public ActivityTrackProvider getActivityTrackProvider(@NonNull final GBDevice device, @NonNull final Context context) {

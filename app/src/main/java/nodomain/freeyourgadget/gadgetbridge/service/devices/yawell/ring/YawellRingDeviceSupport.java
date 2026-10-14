@@ -684,32 +684,18 @@ public class YawellRingDeviceSupport extends AbstractBTLESingleDeviceSupport {
         }
     }
 
-    /** Walks, runs, rides and football are recorded with the phone's GPS. */
-    private static boolean isOutdoorSport(final int sport) {
-        switch (sport) {
-            case 4:   // walk
-            case 7:   // run
-            case 9:   // cycling
-            case 32:  // football
-                return true;
-            default:
-                return false;
-        }
-    }
-
-    /** Starts phone GPS (and optionally OpenTracks) for an outdoor workout. */
+    /** Starts phone GPS (and optionally OpenTracks) for a workout, whatever the sport. */
     private void beginWorkoutTracking(final Prefs prefs, final boolean startOpenTracks) {
         workoutTrack.clear();
         workoutLastLocation = null;
         final int sport = workoutSport & 0xff;
-        final boolean outdoor = isOutdoorSport(sport);
 
-        workoutUsesGps = outdoor && prefs.getBoolean(DeviceSettingsPreferenceConst.PREF_PHONE_WORKOUT_GPS, true);
+        workoutUsesGps = prefs.getBoolean(DeviceSettingsPreferenceConst.PREF_PHONE_WORKOUT_GPS, true);
         if (workoutUsesGps) {
             GBLocationService.start(getContext(), getDevice(), GBLocationProviderType.GPS, 1000);
         }
 
-        workoutUsesOpenTracks = startOpenTracks && outdoor
+        workoutUsesOpenTracks = startOpenTracks
                 && prefs.getBoolean(DeviceSettingsPreferenceConst.PREF_WORKOUT_START_ON_PHONE, false);
         if (workoutUsesOpenTracks) {
             OpenTracksController.startRecording(getContext(), sportToActivityKind(sport));
@@ -727,7 +713,7 @@ public class YawellRingDeviceSupport extends AbstractBTLESingleDeviceSupport {
         workoutUsesOpenTracks = false;
     }
 
-    /** Adds a point with the band's heart rate and, outdoors, the latest phone location. */
+    /** Adds a point with the band's heart rate and the latest phone location. */
     private void recordTrackPoint(final int heartRate) {
         GPSCoordinate location = null;
         final Location l = workoutLastLocation;
@@ -761,7 +747,7 @@ public class YawellRingDeviceSupport extends AbstractBTLESingleDeviceSupport {
     }
 
     /**
-     * Writes the recorded track (heart rate, plus GPS outdoors) to a FIT file and attaches it
+     * Writes the recorded track (heart rate and phone GPS) to a FIT file and attaches it
      * to the workout. Gadgetbridge then uses it for the workout charts and map, and FIT export
      * (e.g. for Strava) hands this file over as is.
      */
