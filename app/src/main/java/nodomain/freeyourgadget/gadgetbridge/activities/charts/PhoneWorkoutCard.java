@@ -16,13 +16,17 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>. */
 package nodomain.freeyourgadget.gadgetbridge.activities.charts;
 
+import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.view.View;
 import android.widget.ArrayAdapter;
 import android.widget.TextView;
 
 import androidx.annotation.Nullable;
+import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
@@ -55,6 +59,15 @@ public class PhoneWorkoutCard implements SharedPreferences.OnSharedPreferenceCha
     private GBDevice device;
     @Nullable
     private SharedPreferences prefs;
+    private boolean receiverRegistered = false;
+
+    // Refresh the buttons when the device connects or disconnects
+    private final BroadcastReceiver deviceChangedReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(final Context context, final Intent intent) {
+            card.post(PhoneWorkoutCard.this::update);
+        }
+    };
     private String[] sportNames;
     private String[] sportValues;
 
@@ -100,12 +113,19 @@ public class PhoneWorkoutCard implements SharedPreferences.OnSharedPreferenceCha
                 .show());
 
         prefs.registerOnSharedPreferenceChangeListener(this);
+        LocalBroadcastManager.getInstance(context)
+                .registerReceiver(deviceChangedReceiver, new IntentFilter(GBDevice.ACTION_DEVICE_CHANGED));
+        receiverRegistered = true;
         update();
     }
 
     public void unregister() {
         if (prefs != null) {
             prefs.unregisterOnSharedPreferenceChangeListener(this);
+        }
+        if (receiverRegistered) {
+            LocalBroadcastManager.getInstance(card.getContext()).unregisterReceiver(deviceChangedReceiver);
+            receiverRegistered = false;
         }
     }
 
@@ -150,7 +170,10 @@ public class PhoneWorkoutCard implements SharedPreferences.OnSharedPreferenceCha
         stop.setVisibility(idle ? View.GONE : View.VISIBLE);
         buttonGap.setVisibility(idle ? View.GONE : View.VISIBLE);
 
-        final boolean connected = device.isInitialized();
+        // The charts screen holds a copy of the device made when it opened, whose state does
+        // not follow the connection. Ask the device manager for the live device instead.
+        final GBDevice liveDevice = GBApplication.app().getDeviceManager().getDeviceByAddress(device.getAddress());
+        final boolean connected = (liveDevice != null ? liveDevice : device).isInitialized();
         start.setEnabled(connected);
         pause.setEnabled(connected);
         resume.setEnabled(connected);
