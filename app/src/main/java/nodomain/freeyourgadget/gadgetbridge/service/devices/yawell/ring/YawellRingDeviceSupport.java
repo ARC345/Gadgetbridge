@@ -48,14 +48,20 @@ import nodomain.freeyourgadget.gadgetbridge.R;
 import nodomain.freeyourgadget.gadgetbridge.activities.SettingsActivity;
 import nodomain.freeyourgadget.gadgetbridge.activities.devicesettings.DeviceSettingsPreferenceConst;
 import nodomain.freeyourgadget.gadgetbridge.database.DBHandler;
+import nodomain.freeyourgadget.gadgetbridge.database.DBHelper;
 import nodomain.freeyourgadget.gadgetbridge.deviceevents.GBDeviceEventBatteryInfo;
 import nodomain.freeyourgadget.gadgetbridge.deviceevents.GBDeviceEventVersionInfo;
 import nodomain.freeyourgadget.gadgetbridge.devices.ColmiHeartRateSampleProvider;
 import nodomain.freeyourgadget.gadgetbridge.devices.yawell.ring.YawellRingLiveActivityContext;
 import nodomain.freeyourgadget.gadgetbridge.devices.yawell.ring.YawellRingConstants;
 import nodomain.freeyourgadget.gadgetbridge.devices.yawell.ring.YawellRingPacketHandler;
+import nodomain.freeyourgadget.gadgetbridge.entities.BaseActivitySummary;
 import nodomain.freeyourgadget.gadgetbridge.entities.ColmiHeartRateSample;
+import nodomain.freeyourgadget.gadgetbridge.entities.DaoSession;
 import nodomain.freeyourgadget.gadgetbridge.impl.GBDevice;
+import nodomain.freeyourgadget.gadgetbridge.model.ActivityKind;
+import nodomain.freeyourgadget.gadgetbridge.model.ActivitySummaryData;
+import nodomain.freeyourgadget.gadgetbridge.model.ActivitySummaryEntries;
 import nodomain.freeyourgadget.gadgetbridge.model.ActivityUser;
 import nodomain.freeyourgadget.gadgetbridge.model.Alarm;
 import nodomain.freeyourgadget.gadgetbridge.model.BatteryState;
@@ -88,6 +94,13 @@ public class YawellRingDeviceSupport extends AbstractBTLESingleDeviceSupport {
 
     private static final int LIVE_ACTIVITY_BUFFER_INTERVAL = 2000;
     private final YawellRingLiveActivityContext liveActivityContext = new YawellRingLiveActivityContext();
+
+    // Phone-started workout in progress (CMD_PHONE_SPORT / CMD_PHONE_SPORT_NOTIFY)
+    private boolean workoutActive = false;
+    private byte workoutSport = 0;
+    private long workoutStartMillis = 0;
+    private int workoutElapsedSeconds = 0;
+    private final List<Integer> workoutHeartRates = new ArrayList<>();
 
     public YawellRingDeviceSupport() {
         super(LOG);
@@ -369,6 +382,22 @@ public class YawellRingDeviceSupport extends AbstractBTLESingleDeviceSupport {
                     }
 
                     break;
+                case YawellRingConstants.CMD_PHONE_SPORT:
+                    LOG.info("Received phone sport response: {}", StringUtils.bytesToHex(value));
+                    break;
+                case YawellRingConstants.CMD_PHONE_SPORT_NOTIFY:
+                    // [0x78, sport, state (1 running, 2 paused), elapsed seconds (2 bytes BE), heart rate, ...]
+                    final int sportState = value[2] & 0xff;
+                    final int elapsedSeconds = ((value[3] & 0xff) << 8) | (value[4] & 0xff);
+                    final int sportHeartRate = value[5] & 0xff;
+                    LOG.debug("Workout update: sport {}, state {}, {} s, {} bpm", value[1] & 0xff, sportState, elapsedSeconds, sportHeartRate);
+                    if (workoutActive) {
+                        workoutElapsedSeconds = Math.max(workoutElapsedSeconds, elapsedSeconds);
+                        if (sportState == 1 && sportHeartRate > 0) {
+                            workoutHeartRates.add(sportHeartRate);
+                        }
+                    }
+                    break;
                 case YawellRingConstants.CMD_NOTIFICATION:
                     switch (value[1]) {
                         case YawellRingConstants.NOTIFICATION_NEW_HR_DATA:
@@ -521,6 +550,101 @@ public class YawellRingDeviceSupport extends AbstractBTLESingleDeviceSupport {
         }
     }
 
+    private void startWorkout(final Prefs prefs) {
+        if (workoutActive) {
+            LOG.info("Workout already running, ignoring start");
+            return;
+        }
+        int sport;
+        try {
+            sport = Integer.parseInt(prefs.getString(YawellRingConstants.PREF_WORKOUT_SPORT, "98"));
+        } catch (final NumberFormatException e) {
+            sport = 98;
+        }
+        workoutSport = (byte) sport;
+        workoutStartMillis = System.currentTimeMillis();
+        workoutElapsedSeconds = 0;
+        workoutHeartRates.clear();
+        workoutActive = true;
+        // Halo sends start, then continue, when it begins a workout
+        sendWorkoutStatus(YawellRingConstants.PHONE_SPORT_START);
+        sendWorkoutStatus(YawellRingConstants.PHONE_SPORT_CONTINUE);
+    }
+
+    private void sendWorkoutStatus(final byte status) {
+        if (!workoutActive) {
+            LOG.info("No workout running, not sending status {}", status);
+            return;
+        }
+        final byte[] packet = buildPacket(new byte[]{YawellRingConstants.CMD_PHONE_SPORT, status, workoutSport});
+        LOG.info("Workout status request sent: {}", StringUtils.bytesToHex(packet));
+        sendWrite("workoutStatusRequest", packet);
+    }
+
+    private void stopWorkout() {
+        if (!workoutActive) {
+            LOG.info("No workout running, ignoring stop");
+            return;
+        }
+        sendWorkoutStatus(YawellRingConstants.PHONE_SPORT_STOP);
+        workoutActive = false;
+        saveWorkout();
+    }
+
+    private void saveWorkout() {
+        final long endMillis = System.currentTimeMillis();
+        final ActivitySummaryData data = new ActivitySummaryData();
+        data.add(ActivitySummaryEntries.ACTIVE_SECONDS, workoutElapsedSeconds, ActivitySummaryEntries.UNIT_SECONDS);
+        if (!workoutHeartRates.isEmpty()) {
+            int sum = 0, min = Integer.MAX_VALUE, max = 0;
+            for (final int hr : workoutHeartRates) {
+                sum += hr;
+                min = Math.min(min, hr);
+                max = Math.max(max, hr);
+            }
+            data.add(ActivitySummaryEntries.HR_AVG, Math.round((float) sum / workoutHeartRates.size()), ActivitySummaryEntries.UNIT_BPM);
+            data.add(ActivitySummaryEntries.HR_MIN, min, ActivitySummaryEntries.UNIT_BPM);
+            data.add(ActivitySummaryEntries.HR_MAX, max, ActivitySummaryEntries.UNIT_BPM);
+        }
+
+        final ActivityKind kind = sportToActivityKind(workoutSport & 0xff);
+        try (DBHandler db = GBApplication.acquireDB()) {
+            final DaoSession session = db.getDaoSession();
+            final BaseActivitySummary summary = new BaseActivitySummary();
+            summary.setDevice(DBHelper.getDevice(getDevice(), session));
+            summary.setUser(DBHelper.getUser(session));
+            summary.setName(kind.getLabel(getContext()));
+            summary.setActivityKind(kind.getCode());
+            summary.setStartTime(new Date(workoutStartMillis));
+            summary.setEndTime(new Date(endMillis));
+            summary.setSummaryData(data.toString());
+            session.getBaseActivitySummaryDao().insert(summary);
+            LOG.info("Saved workout: {} for {} s, {} heart rate samples", kind, workoutElapsedSeconds, workoutHeartRates.size());
+        } catch (final Exception e) {
+            LOG.error("Error saving workout", e);
+        }
+    }
+
+    /** Maps the band's sport type codes (from the Halo app) to Gadgetbridge activity kinds. */
+    private static ActivityKind sportToActivityKind(final int sport) {
+        switch (sport) {
+            case 4:
+                return ActivityKind.WALKING;
+            case 6:
+                return ActivityKind.SWIMMING;
+            case 7:
+                return ActivityKind.RUNNING;
+            case 9:
+                return ActivityKind.CYCLING;
+            case 32:
+                return ActivityKind.SOCCER;
+            case 98:
+                return ActivityKind.FITNESS_EXERCISES;
+            default:
+                return ActivityKind.EXERCISE;
+        }
+    }
+
     private void requestBatteryInfo() {
         byte[] batteryRequestPacket = buildPacket(new byte[]{YawellRingConstants.CMD_BATTERY});
         LOG.info("Battery request sent: {}", StringUtils.bytesToHex(batteryRequestPacket));
@@ -563,6 +687,18 @@ public class YawellRingDeviceSupport extends AbstractBTLESingleDeviceSupport {
     public void onSendConfiguration(String config) {
         final Prefs prefs = getDevicePrefs();
         switch (config) {
+            case YawellRingConstants.PREF_WORKOUT_START:
+                startWorkout(prefs);
+                return;
+            case YawellRingConstants.PREF_WORKOUT_PAUSE:
+                sendWorkoutStatus(YawellRingConstants.PHONE_SPORT_PAUSE);
+                return;
+            case YawellRingConstants.PREF_WORKOUT_RESUME:
+                sendWorkoutStatus(YawellRingConstants.PHONE_SPORT_CONTINUE);
+                return;
+            case YawellRingConstants.PREF_WORKOUT_STOP:
+                stopWorkout();
+                return;
             case SettingsActivity.PREF_UNIT_DISTANCE:
                 setUserPreferences();
                 break;

@@ -2554,6 +2554,13 @@
     <string name="devicetype_yawell_r11" translatable="false">Yawell R11</string>
     <string name="devicetype_colmi_r02" translatable="false">Colmi R02</string>
 <string name="devicetype_pebble_qore2" translatable="false">Pebble Qore 2</string>
+<string name="qore_workout_title">Workout</string>
+<string name="qore_workout_sport">Sport</string>
+<string name="qore_workout_start">Start workout</string>
+<string name="qore_workout_pause">Pause workout</string>
+<string name="qore_workout_resume">Resume workout</string>
+<string name="qore_workout_stop">Stop and save workout</string>
+<string name="qore_workout_stop_summary">Ends the workout on the band and saves it to the workout list</string>
     <string name="devicetype_colmi_r03" translatable="false">Colmi R03</string>
     <string name="devicetype_colmi_r06" translatable="false">Colmi R06</string>
     <string name="devicetype_colmi_r07" translatable="false">Colmi R07</string>

@@ -243,6 +243,23 @@
         <item>@string/left</item>
         <item>@string/right</item>
     </string-array>
+    <!-- Pebble Qore 2 phone-started workouts: values are the band's sport type codes -->
+    <string-array name="qore_workout_sports">
+        <item>@string/activity_type_fitness_exercises</item>
+        <item>@string/activity_type_swimming</item>
+        <item>@string/activity_type_soccer</item>
+        <item>@string/activity_type_walking</item>
+        <item>@string/activity_type_running</item>
+        <item>@string/activity_type_biking</item>
+    </string-array>
+    <string-array name="qore_workout_sports_values">
+        <item>98</item>
+        <item>6</item>
+        <item>32</item>
+        <item>4</item>
+        <item>7</item>
+        <item>9</item>
+    </string-array>
     <string-array name="wearside_values">
         <item>left</item>
         <item>right</item>
