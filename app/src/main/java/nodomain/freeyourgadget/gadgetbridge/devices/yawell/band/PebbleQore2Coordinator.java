@@ -59,7 +59,7 @@ public class PebbleQore2Coordinator extends AbstractYawellRingCoordinator {
     }
 
     @Override
-    public boolean supportsPhoneWorkouts() {
+    public boolean supportsPhoneStartedWorkouts(@NonNull final GBDevice device) {
         return true;
     }
 

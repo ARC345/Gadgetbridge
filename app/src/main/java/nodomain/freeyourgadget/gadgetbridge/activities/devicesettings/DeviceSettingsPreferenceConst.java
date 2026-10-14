@@ -300,6 +300,20 @@ public class DeviceSettingsPreferenceConst {
     public static final String PREF_CAMERA_REMOTE = "camera_remote";
 
     public static final String PREF_WORKOUT_START_ON_PHONE = "workout_start_on_phone";
+
+    // Workouts started on the device from the phone (see DeviceCoordinator#supportsPhoneStartedWorkouts).
+    // The sport is chosen by the user; state and status are written by the device support.
+    public static final String PREF_PHONE_WORKOUT_SPORT = "phone_workout_sport";
+    public static final String PREF_PHONE_WORKOUT_STATE = "phone_workout_state";
+    public static final String PREF_PHONE_WORKOUT_STATUS = "phone_workout_status";
+    public static final String PHONE_WORKOUT_STATE_IDLE = "idle";
+    public static final String PHONE_WORKOUT_STATE_RUNNING = "running";
+    public static final String PHONE_WORKOUT_STATE_PAUSED = "paused";
+    // Commands, sent through onSendConfiguration
+    public static final String PREF_PHONE_WORKOUT_START = "phone_workout_start";
+    public static final String PREF_PHONE_WORKOUT_PAUSE = "phone_workout_pause";
+    public static final String PREF_PHONE_WORKOUT_RESUME = "phone_workout_resume";
+    public static final String PREF_PHONE_WORKOUT_STOP = "phone_workout_stop";
     public static final String PREF_WORKOUT_SEND_GPS_TO_BAND = "workout_send_gps_to_band";
     public static final String PREF_WORKOUT_SEND_GPS_TO_BAND_TIMEOUT = "workout_send_gps_to_band_timeout";
     public static final String PREF_WORKOUT_DETECTION_CATEGORIES = "workout_detection_categories";
