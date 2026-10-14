@@ -18,6 +18,7 @@ package nodomain.freeyourgadget.gadgetbridge.devices.yawell.ring
 
 import de.greenrobot.dao.AbstractDao
 import de.greenrobot.dao.Property
+import nodomain.freeyourgadget.gadgetbridge.GBApplication
 import nodomain.freeyourgadget.gadgetbridge.R
 import nodomain.freeyourgadget.gadgetbridge.activities.devicesettings.DeviceSpecificSettingsScreen
 import nodomain.freeyourgadget.gadgetbridge.activities.devicesettings.dsl.DeviceSettingsSpec
@@ -158,6 +159,17 @@ abstract class AbstractYawellRingCoordinator : AbstractBLEDeviceCoordinator() {
         return ColmiSleepSessionProvider(device, session)
     }
 
+    /** Whether workouts can be started from the phone (CMD_PHONE_SPORT). */
+    open fun supportsPhoneWorkouts(): Boolean {
+        return false
+    }
+
+    private fun sendWorkoutCommand(device: GBDevice?, key: String): Boolean {
+        if (device == null) return false
+        GBApplication.deviceService(device).onSendConfiguration(key)
+        return true
+    }
+
     override fun getSampleProvider(
         device: GBDevice,
         session: DaoSession
@@ -275,6 +287,46 @@ abstract class AbstractYawellRingCoordinator : AbstractBLEDeviceCoordinator() {
                 min = 1,
                 max = 5,
                 defaultValue = 3,
+            )
+        }
+        screen(
+            key = DeviceSpecificSettingsScreen.WORKOUT.key,
+            title = R.string.qore_workout_title,
+            icon = R.drawable.ic_activity_exercise,
+            visibleWhen = { supportsPhoneWorkouts() },
+        ) {
+            list(
+                key = YawellRingConstants.PREF_WORKOUT_SPORT,
+                title = R.string.qore_workout_sport,
+                icon = R.drawable.ic_activity_exercise,
+                defaultValue = "98",
+                entriesRes = R.array.qore_workout_sports,
+                entryValuesRes = R.array.qore_workout_sports_values,
+            )
+            action(
+                key = YawellRingConstants.PREF_WORKOUT_START,
+                title = R.string.qore_workout_start,
+                icon = R.drawable.ic_play,
+                onClick = { _, dev -> sendWorkoutCommand(dev, YawellRingConstants.PREF_WORKOUT_START) },
+            )
+            action(
+                key = YawellRingConstants.PREF_WORKOUT_PAUSE,
+                title = R.string.qore_workout_pause,
+                icon = R.drawable.ic_pause,
+                onClick = { _, dev -> sendWorkoutCommand(dev, YawellRingConstants.PREF_WORKOUT_PAUSE) },
+            )
+            action(
+                key = YawellRingConstants.PREF_WORKOUT_RESUME,
+                title = R.string.qore_workout_resume,
+                icon = R.drawable.ic_play,
+                onClick = { _, dev -> sendWorkoutCommand(dev, YawellRingConstants.PREF_WORKOUT_RESUME) },
+            )
+            action(
+                key = YawellRingConstants.PREF_WORKOUT_STOP,
+                title = R.string.qore_workout_stop,
+                summary = R.string.qore_workout_stop_summary,
+                icon = R.drawable.ic_stop,
+                onClick = { _, dev -> sendWorkoutCommand(dev, YawellRingConstants.PREF_WORKOUT_STOP) },
             )
         }
         screen(

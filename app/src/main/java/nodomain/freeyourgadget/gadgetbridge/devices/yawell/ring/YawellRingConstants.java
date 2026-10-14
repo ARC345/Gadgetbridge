@@ -47,6 +47,8 @@ public class YawellRingConstants {
     public static final byte CMD_FIND_DEVICE = 0x50;
     public static final byte CMD_MANUAL_HEART_RATE = 0x69;
     public static final byte CMD_PUSH_MESSAGE = 0x72;
+    public static final byte CMD_PHONE_SPORT = 0x77;
+    public static final byte CMD_PHONE_SPORT_NOTIFY = 0x78;
     public static final byte CMD_NOTIFICATION = 0x73;
     public static final byte CMD_BIG_DATA_V2 = (byte) 0xbc;
     public static final byte CMD_FACTORY_RESET = (byte) 0xff;
@@ -83,4 +85,17 @@ public class YawellRingConstants {
     public static final byte ALARM_OP_READ = 0x01;
     public static final byte ALARM_OP_WRITE = 0x02;
     public static final byte ALARM_FLAG_ENABLED = (byte) 0x80;
+
+    // Phone-started workouts: [CMD_PHONE_SPORT, status, sport type].
+    // Captured from the Halo app driving a Pebble Qore 2.
+    public static final byte PHONE_SPORT_START = 0x01;
+    public static final byte PHONE_SPORT_PAUSE = 0x02;
+    public static final byte PHONE_SPORT_CONTINUE = 0x03;
+    public static final byte PHONE_SPORT_STOP = 0x04;
+
+    public static final String PREF_WORKOUT_SPORT = "qore_workout_sport";
+    public static final String PREF_WORKOUT_START = "qore_workout_start";
+    public static final String PREF_WORKOUT_PAUSE = "qore_workout_pause";
+    public static final String PREF_WORKOUT_RESUME = "qore_workout_resume";
+    public static final String PREF_WORKOUT_STOP = "qore_workout_stop";
 }

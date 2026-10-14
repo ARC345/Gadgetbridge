@@ -21,8 +21,12 @@ import androidx.annotation.NonNull;
 import java.util.regex.Pattern;
 
 import nodomain.freeyourgadget.gadgetbridge.R;
+import nodomain.freeyourgadget.gadgetbridge.devices.EstimatedVo2MaxSampleProvider;
+import nodomain.freeyourgadget.gadgetbridge.devices.Vo2MaxSampleProvider;
 import nodomain.freeyourgadget.gadgetbridge.devices.yawell.ring.AbstractYawellRingCoordinator;
+import nodomain.freeyourgadget.gadgetbridge.entities.DaoSession;
 import nodomain.freeyourgadget.gadgetbridge.impl.GBDevice;
+import nodomain.freeyourgadget.gadgetbridge.model.Vo2MaxSample;
 
 /**
  * Pebble Qore 2 fitness band. Uses the same Nordic UART and de5bf728 command
@@ -52,5 +56,24 @@ public class PebbleQore2Coordinator extends AbstractYawellRingCoordinator {
     @Override
     public boolean supportsContinuousTemperature(@NonNull final GBDevice device) {
         return true;
+    }
+
+    @Override
+    public boolean supportsPhoneWorkouts() {
+        return true;
+    }
+
+    /**
+     * The band does not measure VO2 max. This turns on a rough estimate computed
+     * from its heart rate data, see {@link EstimatedVo2MaxSampleProvider}.
+     */
+    @Override
+    public boolean supportsVO2Max(@NonNull final GBDevice device) {
+        return true;
+    }
+
+    @Override
+    public Vo2MaxSampleProvider<? extends Vo2MaxSample> getVo2MaxSampleProvider(@NonNull final GBDevice device, @NonNull final DaoSession session) {
+        return new EstimatedVo2MaxSampleProvider(getSampleProvider(device, session));
     }
 }
