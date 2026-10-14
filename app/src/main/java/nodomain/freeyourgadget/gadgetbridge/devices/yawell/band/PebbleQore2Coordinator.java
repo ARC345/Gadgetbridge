@@ -43,4 +43,14 @@ public class PebbleQore2Coordinator extends AbstractYawellRingCoordinator {
     public DeviceKind getDeviceKind(@NonNull GBDevice device) {
         return DeviceKind.FITNESS_BAND;
     }
+
+    @Override
+    public boolean supportsTemperatureMeasurement(@NonNull final GBDevice device) {
+        return true;
+    }
+
+    @Override
+    public boolean supportsContinuousTemperature(@NonNull final GBDevice device) {
+        return true;
+    }
 }
