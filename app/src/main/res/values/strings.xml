@@ -2570,6 +2570,11 @@
 <string name="qore_workout_saved">Workout saved</string>
 <string name="qore_workout_already_running">A workout is already running</string>
 <string name="qore_workout_none_running">No workout is running</string>
+<string name="qore_workout_recording_title">Workout recording</string>
+<string name="qore_workout_gps_title">Record GPS for outdoor workouts</string>
+<string name="qore_workout_gps_summary">Uses the phone\'s GPS for walks, runs, rides and football, so workouts get a route</string>
+<string name="qore_workout_opentracks_title">Also record in OpenTracks</string>
+<string name="qore_workout_opentracks_summary">Starts and stops OpenTracks with outdoor workouts. Needs OpenTracks installed</string>
     <string name="devicetype_colmi_r03" translatable="false">Colmi R03</string>
     <string name="devicetype_colmi_r06" translatable="false">Colmi R06</string>
     <string name="devicetype_colmi_r07" translatable="false">Colmi R07</string>

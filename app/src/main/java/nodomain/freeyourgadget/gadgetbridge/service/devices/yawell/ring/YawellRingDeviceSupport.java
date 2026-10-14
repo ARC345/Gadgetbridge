@@ -22,6 +22,7 @@ import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothGatt;
 import android.bluetooth.BluetoothGattCharacteristic;
 import android.content.Context;
+import android.location.Location;
 import android.os.Handler;
 import android.os.Looper;
 import android.widget.Toast;
@@ -31,6 +32,8 @@ import androidx.annotation.NonNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.File;
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
@@ -57,16 +60,23 @@ import nodomain.freeyourgadget.gadgetbridge.devices.yawell.ring.YawellRingLiveAc
 import nodomain.freeyourgadget.gadgetbridge.devices.yawell.ring.YawellRingConstants;
 import nodomain.freeyourgadget.gadgetbridge.devices.yawell.ring.YawellRingPacketHandler;
 import nodomain.freeyourgadget.gadgetbridge.entities.BaseActivitySummary;
+import nodomain.freeyourgadget.gadgetbridge.export.FitExporter;
+import nodomain.freeyourgadget.gadgetbridge.externalevents.gps.GBLocationProviderType;
+import nodomain.freeyourgadget.gadgetbridge.externalevents.gps.GBLocationService;
+import nodomain.freeyourgadget.gadgetbridge.externalevents.opentracks.OpenTracksController;
 import nodomain.freeyourgadget.gadgetbridge.entities.ColmiHeartRateSample;
 import nodomain.freeyourgadget.gadgetbridge.entities.DaoSession;
 import nodomain.freeyourgadget.gadgetbridge.impl.GBDevice;
 import nodomain.freeyourgadget.gadgetbridge.model.ActivityKind;
+import nodomain.freeyourgadget.gadgetbridge.model.ActivityPoint;
 import nodomain.freeyourgadget.gadgetbridge.model.ActivitySummaryData;
 import nodomain.freeyourgadget.gadgetbridge.model.ActivitySummaryEntries;
+import nodomain.freeyourgadget.gadgetbridge.model.ActivityTrack;
 import nodomain.freeyourgadget.gadgetbridge.model.ActivityUser;
 import nodomain.freeyourgadget.gadgetbridge.model.Alarm;
 import nodomain.freeyourgadget.gadgetbridge.model.BatteryState;
 import nodomain.freeyourgadget.gadgetbridge.model.DistanceUnit;
+import nodomain.freeyourgadget.gadgetbridge.model.GPSCoordinate;
 import nodomain.freeyourgadget.gadgetbridge.service.btle.AbstractBTLESingleDeviceSupport;
 import nodomain.freeyourgadget.gadgetbridge.service.btle.BLETypeConversions;
 import nodomain.freeyourgadget.gadgetbridge.service.btle.GattService;
@@ -75,6 +85,7 @@ import nodomain.freeyourgadget.gadgetbridge.service.btle.profiles.IntentListener
 import nodomain.freeyourgadget.gadgetbridge.service.btle.profiles.deviceinfo.DeviceInfo;
 import nodomain.freeyourgadget.gadgetbridge.service.btle.profiles.deviceinfo.DeviceInfoProfile;
 import nodomain.freeyourgadget.gadgetbridge.util.DateTimeUtils;
+import nodomain.freeyourgadget.gadgetbridge.util.FileUtils;
 import nodomain.freeyourgadget.gadgetbridge.util.GB;
 import nodomain.freeyourgadget.gadgetbridge.util.Prefs;
 import nodomain.freeyourgadget.gadgetbridge.util.StringUtils;
@@ -104,6 +115,13 @@ public class YawellRingDeviceSupport extends AbstractBTLESingleDeviceSupport {
     private int workoutLastHeartRate = 0;
     private long workoutStoppedMillis = 0;
     private final List<Integer> workoutHeartRates = new ArrayList<>();
+    // Per-second track of the workout: heart rate from the band, location from the phone's GPS
+    private static final long GPS_FIX_MAX_AGE_MILLIS = 10_000;
+    private final List<ActivityPoint> workoutTrack = new ArrayList<>();
+    private boolean workoutUsesGps = false;
+    private boolean workoutUsesOpenTracks = false;
+    private Location workoutLastLocation = null;
+    private long workoutLastLocationMillis = 0;
 
     public YawellRingDeviceSupport() {
         super(LOG);
@@ -411,12 +429,17 @@ public class YawellRingDeviceSupport extends AbstractBTLESingleDeviceSupport {
                         workoutLastHeartRate = 0;
                         workoutHeartRates.clear();
                         workoutActive = true;
+                        // OpenTracks, if used, kept recording across the restart; only resume GPS here
+                        beginWorkoutTracking(getDevicePrefs(), false);
                     }
                     if (workoutActive) {
                         workoutElapsedSeconds = Math.max(workoutElapsedSeconds, elapsedSeconds);
                         if (sportState == 1 && sportHeartRate > 0) {
                             workoutHeartRates.add(sportHeartRate);
                             workoutLastHeartRate = sportHeartRate;
+                        }
+                        if (sportState == 1) {
+                            recordTrackPoint(sportHeartRate);
                         }
                         publishWorkout(sportState == 2);
                     }
@@ -591,6 +614,7 @@ public class YawellRingDeviceSupport extends AbstractBTLESingleDeviceSupport {
         workoutLastHeartRate = 0;
         workoutHeartRates.clear();
         workoutActive = true;
+        beginWorkoutTracking(prefs, true);
         // Halo sends start, then continue, when it begins a workout
         sendWorkoutStatus(YawellRingConstants.PHONE_SPORT_START);
         sendWorkoutStatus(YawellRingConstants.PHONE_SPORT_CONTINUE);
@@ -616,6 +640,7 @@ public class YawellRingDeviceSupport extends AbstractBTLESingleDeviceSupport {
         }
         workoutActive = false;
         workoutStoppedMillis = System.currentTimeMillis();
+        endWorkoutTracking();
         saveWorkout();
         publishWorkoutIdle();
         GB.toast(getContext(), R.string.qore_workout_saved, Toast.LENGTH_SHORT, GB.INFO);
@@ -647,11 +672,120 @@ public class YawellRingDeviceSupport extends AbstractBTLESingleDeviceSupport {
             summary.setActivityKind(kind.getCode());
             summary.setStartTime(new Date(workoutStartMillis));
             summary.setEndTime(new Date(endMillis));
+            if (!workoutTrack.isEmpty()) {
+                attachFitTrack(summary, data, kind);
+            }
             summary.setSummaryData(data.toString());
             session.getBaseActivitySummaryDao().insert(summary);
-            LOG.info("Saved workout: {} for {} s, {} heart rate samples", kind, workoutElapsedSeconds, workoutHeartRates.size());
+            LOG.info("Saved workout: {} for {} s, {} heart rate samples, {} track points",
+                    kind, workoutElapsedSeconds, workoutHeartRates.size(), workoutTrack.size());
         } catch (final Exception e) {
             LOG.error("Error saving workout", e);
+        }
+    }
+
+    /** Walks, runs, rides and football are recorded with the phone's GPS. */
+    private static boolean isOutdoorSport(final int sport) {
+        switch (sport) {
+            case 4:   // walk
+            case 7:   // run
+            case 9:   // cycling
+            case 32:  // football
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    /** Starts phone GPS (and optionally OpenTracks) for an outdoor workout. */
+    private void beginWorkoutTracking(final Prefs prefs, final boolean startOpenTracks) {
+        workoutTrack.clear();
+        workoutLastLocation = null;
+        final int sport = workoutSport & 0xff;
+        final boolean outdoor = isOutdoorSport(sport);
+
+        workoutUsesGps = outdoor && prefs.getBoolean(DeviceSettingsPreferenceConst.PREF_PHONE_WORKOUT_GPS, true);
+        if (workoutUsesGps) {
+            GBLocationService.start(getContext(), getDevice(), GBLocationProviderType.GPS, 1000);
+        }
+
+        workoutUsesOpenTracks = startOpenTracks && outdoor
+                && prefs.getBoolean(DeviceSettingsPreferenceConst.PREF_WORKOUT_START_ON_PHONE, false);
+        if (workoutUsesOpenTracks) {
+            OpenTracksController.startRecording(getContext(), sportToActivityKind(sport));
+        }
+    }
+
+    private void endWorkoutTracking() {
+        if (workoutUsesGps) {
+            GBLocationService.stop(getContext(), getDevice());
+        }
+        if (workoutUsesOpenTracks) {
+            OpenTracksController.stopRecording(getContext());
+        }
+        workoutUsesGps = false;
+        workoutUsesOpenTracks = false;
+    }
+
+    /** Adds a point with the band's heart rate and, outdoors, the latest phone location. */
+    private void recordTrackPoint(final int heartRate) {
+        GPSCoordinate location = null;
+        final Location l = workoutLastLocation;
+        if (workoutUsesGps && l != null && System.currentTimeMillis() - workoutLastLocationMillis < GPS_FIX_MAX_AGE_MILLIS) {
+            location = l.hasAltitude()
+                    ? new GPSCoordinate(l.getLongitude(), l.getLatitude(), l.getAltitude())
+                    : new GPSCoordinate(l.getLongitude(), l.getLatitude());
+        }
+        if (heartRate <= 0 && location == null) {
+            return;
+        }
+        final ActivityPoint point = new ActivityPoint(new Date());
+        if (heartRate > 0) {
+            point.setHeartRate(heartRate);
+        }
+        if (location != null) {
+            point.setLocation(location);
+            if (l.hasSpeed()) {
+                point.setSpeed(l.getSpeed());
+            }
+        }
+        workoutTrack.add(point);
+    }
+
+    @Override
+    public void onSetGpsLocation(final Location location) {
+        if (workoutActive && workoutUsesGps) {
+            workoutLastLocation = location;
+            workoutLastLocationMillis = System.currentTimeMillis();
+        }
+    }
+
+    /**
+     * Writes the recorded track (heart rate, plus GPS outdoors) to a FIT file and attaches it
+     * to the workout. Gadgetbridge then uses it for the workout charts and map, and FIT export
+     * (e.g. for Strava) hands this file over as is.
+     */
+    private void attachFitTrack(final BaseActivitySummary summary, final ActivitySummaryData data, final ActivityKind kind) {
+        boolean hasGps = false;
+        final ActivityTrack track = new ActivityTrack();
+        track.setBaseTime(summary.getStartTime());
+        track.setName(kind.getLabel(getContext()));
+        for (final ActivityPoint point : workoutTrack) {
+            track.addTrackPoint(point);
+            hasGps |= point.getLocation() != null;
+        }
+        data.setHasGps(hasGps);
+        try {
+            final File dir = new File(FileUtils.getExternalFilesDir(), "qore2-workouts");
+            if (!dir.isDirectory() && !dir.mkdirs()) {
+                throw new IOException("Cannot create " + dir);
+            }
+            final File file = new File(dir, "workout-" + summary.getStartTime().getTime() + ".fit");
+            new FitExporter().performExport(track, summary, data, file);
+            summary.setRawDetailsPath(file.getAbsolutePath());
+            LOG.info("Wrote workout track to {} ({} points, gps: {})", file, workoutTrack.size(), hasGps);
+        } catch (final Exception e) {
+            LOG.error("Failed to write the workout FIT file", e);
         }
     }
 

@@ -16,6 +16,8 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>. */
 package nodomain.freeyourgadget.gadgetbridge.devices.yawell.band;
 
+import android.content.Context;
+
 import androidx.annotation.NonNull;
 
 import java.util.regex.Pattern;
@@ -26,6 +28,8 @@ import nodomain.freeyourgadget.gadgetbridge.devices.Vo2MaxSampleProvider;
 import nodomain.freeyourgadget.gadgetbridge.devices.yawell.ring.AbstractYawellRingCoordinator;
 import nodomain.freeyourgadget.gadgetbridge.entities.DaoSession;
 import nodomain.freeyourgadget.gadgetbridge.impl.GBDevice;
+import nodomain.freeyourgadget.gadgetbridge.model.ActivityTrackProvider;
+import nodomain.freeyourgadget.gadgetbridge.model.FitActivityTrackProvider;
 import nodomain.freeyourgadget.gadgetbridge.model.Vo2MaxSample;
 
 /**
@@ -61,6 +65,15 @@ public class PebbleQore2Coordinator extends AbstractYawellRingCoordinator {
     @Override
     public boolean supportsPhoneStartedWorkouts(@NonNull final GBDevice device) {
         return true;
+    }
+
+    /**
+     * Workouts started from the phone are saved with a FIT file holding the per-second heart
+     * rate (and the phone's GPS outdoors), so charts and the map read the track from it.
+     */
+    @Override
+    public ActivityTrackProvider getActivityTrackProvider(@NonNull final GBDevice device, @NonNull final Context context) {
+        return new FitActivityTrackProvider();
     }
 
     /**
