@@ -38,7 +38,6 @@ import java.util.Calendar;
 import java.util.Date;
 import java.util.GregorianCalendar;
 import java.util.List;
-import java.util.Locale;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.Executors;
@@ -178,7 +177,7 @@ public class YawellRingDeviceSupport extends AbstractBTLESingleDeviceSupport {
         // A workout's state only lives in this session. After a reconnect or app restart
         // the screen must not offer Pause/Stop for a workout this session never started.
         if (!workoutActive) {
-            setWorkoutUi(YawellRingConstants.WORKOUT_STATE_IDLE, "");
+            publishWorkoutIdle();
         }
 
         if (getDevice().getFirmwareVersion() == null) {
@@ -421,7 +420,7 @@ public class YawellRingDeviceSupport extends AbstractBTLESingleDeviceSupport {
                             workoutHeartRates.add(sportHeartRate);
                             workoutLastHeartRate = sportHeartRate;
                         }
-                        showWorkoutStatus(sportState == 2);
+                        publishWorkout(sportState == 2);
                     }
                     break;
                 case YawellRingConstants.CMD_NOTIFICATION:
@@ -597,8 +596,7 @@ public class YawellRingDeviceSupport extends AbstractBTLESingleDeviceSupport {
         // Halo sends start, then continue, when it begins a workout
         sendWorkoutStatus(YawellRingConstants.PHONE_SPORT_START);
         sendWorkoutStatus(YawellRingConstants.PHONE_SPORT_CONTINUE);
-        showWorkoutStatus(false);
-        GB.toast(getContext(), R.string.qore_workout_started, Toast.LENGTH_SHORT, GB.INFO);
+        publishWorkout(false);
     }
 
     /** @return true if a workout was running and the status was sent */
@@ -621,9 +619,7 @@ public class YawellRingDeviceSupport extends AbstractBTLESingleDeviceSupport {
         workoutActive = false;
         workoutStoppedMillis = System.currentTimeMillis();
         saveWorkout();
-        final String sport = sportToActivityKind(workoutSport & 0xff).getLabel(getContext());
-        setWorkoutUi(YawellRingConstants.WORKOUT_STATE_IDLE,
-                getContext().getString(R.string.qore_workout_status_saved, sport, formatDuration(workoutElapsedSeconds)));
+        publishWorkoutIdle();
         GB.toast(getContext(), R.string.qore_workout_saved, Toast.LENGTH_SHORT, GB.INFO);
     }
 
@@ -661,31 +657,26 @@ public class YawellRingDeviceSupport extends AbstractBTLESingleDeviceSupport {
         }
     }
 
-    /** Updates the workout state and status line shown on the workout settings screen. */
-    private void setWorkoutUi(final String state, final String status) {
+    /** Publishes the live workout values for the activity list card. */
+    private void publishWorkout(final boolean paused) {
         getDevicePrefs().getPreferences().edit()
-                .putString(YawellRingConstants.PREF_WORKOUT_STATE, state)
-                .putString(YawellRingConstants.PREF_WORKOUT_STATUS, status)
+                .putString(DeviceSettingsPreferenceConst.PREF_PHONE_WORKOUT_STATE,
+                        paused ? YawellRingConstants.WORKOUT_STATE_PAUSED : YawellRingConstants.WORKOUT_STATE_RUNNING)
+                .putString(DeviceSettingsPreferenceConst.PREF_PHONE_WORKOUT_ACTIVE_SPORT_NAME,
+                        sportToActivityKind(workoutSport & 0xff).getLabel(getContext()))
+                .putInt(DeviceSettingsPreferenceConst.PREF_PHONE_WORKOUT_ELAPSED_SECONDS, workoutElapsedSeconds)
+                .putInt(DeviceSettingsPreferenceConst.PREF_PHONE_WORKOUT_HEART_RATE, workoutLastHeartRate)
                 .apply();
     }
 
-    private void showWorkoutStatus(final boolean paused) {
-        final String sport = sportToActivityKind(workoutSport & 0xff).getLabel(getContext());
-        final String elapsed = formatDuration(workoutElapsedSeconds);
-        final String status;
-        if (paused) {
-            status = getContext().getString(R.string.qore_workout_status_paused, sport, elapsed);
-        } else if (workoutLastHeartRate > 0) {
-            status = getContext().getString(R.string.qore_workout_status_running_hr, sport, elapsed, workoutLastHeartRate);
-        } else {
-            status = getContext().getString(R.string.qore_workout_status_running, sport, elapsed);
-        }
-        setWorkoutUi(paused ? YawellRingConstants.WORKOUT_STATE_PAUSED : YawellRingConstants.WORKOUT_STATE_RUNNING, status);
-    }
-
-    private static String formatDuration(final int seconds) {
-        final int h = seconds / 3600, m = (seconds % 3600) / 60, s = seconds % 60;
-        return h > 0 ? String.format(Locale.ROOT, "%d:%02d:%02d", h, m, s) : String.format(Locale.ROOT, "%d:%02d", m, s);
+    /** Clears the live workout values: no workout is running. */
+    private void publishWorkoutIdle() {
+        getDevicePrefs().getPreferences().edit()
+                .putString(DeviceSettingsPreferenceConst.PREF_PHONE_WORKOUT_STATE, YawellRingConstants.WORKOUT_STATE_IDLE)
+                .remove(DeviceSettingsPreferenceConst.PREF_PHONE_WORKOUT_ACTIVE_SPORT_NAME)
+                .remove(DeviceSettingsPreferenceConst.PREF_PHONE_WORKOUT_ELAPSED_SECONDS)
+                .remove(DeviceSettingsPreferenceConst.PREF_PHONE_WORKOUT_HEART_RATE)
+                .apply();
     }
 
     /** Maps the band's sport type codes (from the Halo app) to Gadgetbridge activity kinds. */
@@ -755,14 +746,12 @@ public class YawellRingDeviceSupport extends AbstractBTLESingleDeviceSupport {
                 return;
             case YawellRingConstants.PREF_WORKOUT_PAUSE:
                 if (sendWorkoutStatus(YawellRingConstants.PHONE_SPORT_PAUSE)) {
-                    showWorkoutStatus(true);
-                    GB.toast(getContext(), R.string.qore_workout_paused, Toast.LENGTH_SHORT, GB.INFO);
+                    publishWorkout(true);
                 }
                 return;
             case YawellRingConstants.PREF_WORKOUT_RESUME:
                 if (sendWorkoutStatus(YawellRingConstants.PHONE_SPORT_CONTINUE)) {
-                    showWorkoutStatus(false);
-                    GB.toast(getContext(), R.string.qore_workout_resumed, Toast.LENGTH_SHORT, GB.INFO);
+                    publishWorkout(false);
                 }
                 return;
             case YawellRingConstants.PREF_WORKOUT_STOP:

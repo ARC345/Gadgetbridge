@@ -23,6 +23,7 @@ import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.view.View;
 import android.widget.ArrayAdapter;
+import android.widget.ImageView;
 import android.widget.TextView;
 
 import androidx.annotation.Nullable;
@@ -32,6 +33,8 @@ import com.google.android.material.button.MaterialButton;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.textfield.MaterialAutoCompleteTextView;
 
+import java.util.Locale;
+
 import nodomain.freeyourgadget.gadgetbridge.GBApplication;
 import nodomain.freeyourgadget.gadgetbridge.R;
 import nodomain.freeyourgadget.gadgetbridge.impl.GBDevice;
@@ -39,27 +42,43 @@ import nodomain.freeyourgadget.gadgetbridge.impl.GBDevice;
 import static nodomain.freeyourgadget.gadgetbridge.activities.devicesettings.DeviceSettingsPreferenceConst.*;
 
 /**
- * Card on the activity list to start, pause, resume and stop a workout on the device.
- * Shown only for devices whose coordinator supports phone-started workouts. The device
- * support writes the workout state and a status line to the device preferences, and
- * the card follows those changes live.
+ * Card on today's activity list to start, pause, resume and stop a workout on the device.
+ * <p>
+ * Idle: a compact row with a sport picker and Start. Active: a state label (text and icon,
+ * not colour alone), a large elapsed timer, the sport and heart rate, and Pause/Resume plus
+ * Stop. When the device is not connected the buttons are disabled and a line explains why.
+ * <p>
+ * The device support publishes the live values to the device preferences; the card follows
+ * them. Shown only for devices that support phone-started workouts, and only for today.
  */
 public class PhoneWorkoutCard implements SharedPreferences.OnSharedPreferenceChangeListener {
+    private static final String DEFAULT_SPORT = "98";
+
     private final View card;
-    private final TextView status;
-    private final View sportLayout;
+    private final View idleGroup;
     private final MaterialAutoCompleteTextView sport;
     private final MaterialButton start;
-    private final MaterialButton pause;
-    private final MaterialButton resume;
+    private final View activeGroup;
+    private final ImageView stateIcon;
+    private final TextView state;
+    private final TextView elapsed;
+    private final TextView detail;
+    private final MaterialButton pauseResume;
     private final MaterialButton stop;
-    private final View buttonGap;
+    private final TextView hint;
 
     @Nullable
     private GBDevice device;
     @Nullable
     private SharedPreferences prefs;
+    private String[] sportNames = new String[0];
+    private String[] sportValues = new String[0];
+    private boolean showForToday = true;
     private boolean receiverRegistered = false;
+    @Nullable
+    private Runnable onWorkoutFinished;
+    @Nullable
+    private String lastState;
 
     // Refresh the buttons when the device connects or disconnects
     private final BroadcastReceiver deviceChangedReceiver = new BroadcastReceiver() {
@@ -68,31 +87,42 @@ public class PhoneWorkoutCard implements SharedPreferences.OnSharedPreferenceCha
             card.post(PhoneWorkoutCard.this::update);
         }
     };
-    private String[] sportNames;
-    private String[] sportValues;
 
     public PhoneWorkoutCard(final View root) {
         card = root.findViewById(R.id.phone_workout_card);
-        status = root.findViewById(R.id.phone_workout_status);
-        sportLayout = root.findViewById(R.id.phone_workout_sport_layout);
+        idleGroup = root.findViewById(R.id.phone_workout_idle);
         sport = root.findViewById(R.id.phone_workout_sport);
         start = root.findViewById(R.id.phone_workout_start);
-        pause = root.findViewById(R.id.phone_workout_pause);
-        resume = root.findViewById(R.id.phone_workout_resume);
+        activeGroup = root.findViewById(R.id.phone_workout_active);
+        stateIcon = root.findViewById(R.id.phone_workout_state_icon);
+        state = root.findViewById(R.id.phone_workout_state);
+        elapsed = root.findViewById(R.id.phone_workout_elapsed);
+        detail = root.findViewById(R.id.phone_workout_detail);
+        pauseResume = root.findViewById(R.id.phone_workout_pause_resume);
         stop = root.findViewById(R.id.phone_workout_stop);
-        buttonGap = root.findViewById(R.id.phone_workout_button_gap);
+        hint = root.findViewById(R.id.phone_workout_hint);
     }
 
-    /** Shows the card for this device, or hides it if the device can't start workouts. */
+    /** Called when a workout ends, so the screen can reload and show the saved workout. */
+    public void setOnWorkoutFinished(@Nullable final Runnable callback) {
+        onWorkoutFinished = callback;
+    }
+
+    /** Workouts can only be started for now, so the card is hidden on past days. */
+    public void setShowForToday(final boolean isToday) {
+        showForToday = isToday;
+        update();
+    }
+
+    /** Binds the card to a device, or hides it if the device can't start workouts. */
     public void bind(@Nullable final GBDevice newDevice) {
         unregister();
         device = newDevice;
         if (device == null || !device.getDeviceCoordinator().supportsPhoneStartedWorkouts(device)) {
-            card.setVisibility(View.GONE);
             prefs = null;
+            card.setVisibility(View.GONE);
             return;
         }
-        card.setVisibility(View.VISIBLE);
         prefs = GBApplication.getDeviceSpecificSharedPrefs(device.getAddress());
 
         final Context context = card.getContext();
@@ -103,12 +133,12 @@ public class PhoneWorkoutCard implements SharedPreferences.OnSharedPreferenceCha
                 prefs.edit().putString(PREF_PHONE_WORKOUT_SPORT, sportValues[position]).apply());
 
         start.setOnClickListener(v -> send(PREF_PHONE_WORKOUT_START));
-        pause.setOnClickListener(v -> send(PREF_PHONE_WORKOUT_PAUSE));
-        resume.setOnClickListener(v -> send(PREF_PHONE_WORKOUT_RESUME));
+        pauseResume.setOnClickListener(v -> send(PHONE_WORKOUT_STATE_PAUSED.equals(currentState())
+                ? PREF_PHONE_WORKOUT_RESUME : PREF_PHONE_WORKOUT_PAUSE));
         stop.setOnClickListener(v -> new MaterialAlertDialogBuilder(context)
-                .setTitle(R.string.qore_workout_stop)
+                .setTitle(R.string.qore_workout_stop_title)
                 .setMessage(R.string.qore_workout_stop_confirm)
-                .setPositiveButton(R.string.ok, (dialog, which) -> send(PREF_PHONE_WORKOUT_STOP))
+                .setPositiveButton(R.string.qore_workout_stop_confirm_button, (dialog, which) -> send(PREF_PHONE_WORKOUT_STOP))
                 .setNegativeButton(R.string.cancel, null)
                 .show());
 
@@ -131,7 +161,7 @@ public class PhoneWorkoutCard implements SharedPreferences.OnSharedPreferenceCha
 
     @Override
     public void onSharedPreferenceChanged(final SharedPreferences sharedPreferences, final String key) {
-        if (PREF_PHONE_WORKOUT_STATE.equals(key) || PREF_PHONE_WORKOUT_STATUS.equals(key) || PREF_PHONE_WORKOUT_SPORT.equals(key)) {
+        if (key != null && key.startsWith("phone_workout_")) {
             card.post(this::update);
         }
     }
@@ -142,41 +172,70 @@ public class PhoneWorkoutCard implements SharedPreferences.OnSharedPreferenceCha
         }
     }
 
+    private String currentState() {
+        return prefs != null ? prefs.getString(PREF_PHONE_WORKOUT_STATE, PHONE_WORKOUT_STATE_IDLE) : PHONE_WORKOUT_STATE_IDLE;
+    }
+
     private void update() {
         if (prefs == null || device == null) {
             return;
         }
-        final Context context = card.getContext();
-        final String state = prefs.getString(PREF_PHONE_WORKOUT_STATE, PHONE_WORKOUT_STATE_IDLE);
-        final boolean idle = PHONE_WORKOUT_STATE_IDLE.equals(state);
-        final boolean running = PHONE_WORKOUT_STATE_RUNNING.equals(state);
-        final boolean paused = PHONE_WORKOUT_STATE_PAUSED.equals(state);
+        final String workoutState = currentState();
+        final boolean idle = PHONE_WORKOUT_STATE_IDLE.equals(workoutState);
+        final boolean paused = PHONE_WORKOUT_STATE_PAUSED.equals(workoutState);
 
-        final String statusText = prefs.getString(PREF_PHONE_WORKOUT_STATUS, "");
-        status.setText(statusText.isEmpty() ? context.getString(R.string.qore_workout_status_idle) : statusText);
-
-        final String selected = prefs.getString(PREF_PHONE_WORKOUT_SPORT, "98");
-        for (int i = 0; i < sportValues.length; i++) {
-            if (sportValues[i].equals(selected)) {
-                sport.setText(sportNames[i], false);
-                break;
-            }
+        // A workout just ended and was saved: reload the list so it shows up at the top
+        if (idle && lastState != null && !PHONE_WORKOUT_STATE_IDLE.equals(lastState) && onWorkoutFinished != null) {
+            onWorkoutFinished.run();
         }
+        lastState = workoutState;
 
-        sportLayout.setVisibility(idle ? View.VISIBLE : View.GONE);
-        start.setVisibility(idle ? View.VISIBLE : View.GONE);
-        pause.setVisibility(running ? View.VISIBLE : View.GONE);
-        resume.setVisibility(paused ? View.VISIBLE : View.GONE);
-        stop.setVisibility(idle ? View.GONE : View.VISIBLE);
-        buttonGap.setVisibility(idle ? View.GONE : View.VISIBLE);
+        // Keep a running workout visible on any day, so it can always be stopped
+        card.setVisibility(showForToday || !idle ? View.VISIBLE : View.GONE);
+
+        idleGroup.setVisibility(idle ? View.VISIBLE : View.GONE);
+        activeGroup.setVisibility(idle ? View.GONE : View.VISIBLE);
+
+        if (idle) {
+            final String selected = prefs.getString(PREF_PHONE_WORKOUT_SPORT, DEFAULT_SPORT);
+            for (int i = 0; i < sportValues.length; i++) {
+                if (sportValues[i].equals(selected)) {
+                    sport.setText(sportNames[i], false);
+                    break;
+                }
+            }
+        } else {
+            final Context context = card.getContext();
+            state.setText(paused ? R.string.qore_workout_state_paused : R.string.qore_workout_state_in_progress);
+            stateIcon.setImageResource(paused ? R.drawable.ic_pause : R.drawable.ic_play);
+
+            final String time = formatElapsed(prefs.getInt(PREF_PHONE_WORKOUT_ELAPSED_SECONDS, 0));
+            elapsed.setText(time);
+            elapsed.setContentDescription(context.getString(R.string.qore_workout_elapsed_description, time));
+
+            final String sportName = prefs.getString(PREF_PHONE_WORKOUT_ACTIVE_SPORT_NAME, "");
+            final int heartRate = prefs.getInt(PREF_PHONE_WORKOUT_HEART_RATE, 0);
+            detail.setText(heartRate > 0 ? context.getString(R.string.qore_workout_detail_hr, sportName, heartRate) : sportName);
+
+            pauseResume.setText(paused ? R.string.qore_workout_resume : R.string.qore_workout_pause);
+            pauseResume.setIconResource(paused ? R.drawable.ic_play : R.drawable.ic_pause);
+        }
 
         // The charts screen holds a copy of the device made when it opened, whose state does
         // not follow the connection. Ask the device manager for the live device instead.
         final GBDevice liveDevice = GBApplication.app().getDeviceManager().getDeviceByAddress(device.getAddress());
         final boolean connected = (liveDevice != null ? liveDevice : device).isInitialized();
         start.setEnabled(connected);
-        pause.setEnabled(connected);
-        resume.setEnabled(connected);
+        sport.setEnabled(connected);
+        pauseResume.setEnabled(connected);
         stop.setEnabled(connected);
+        hint.setVisibility(connected ? View.GONE : View.VISIBLE);
+    }
+
+    private static String formatElapsed(final int seconds) {
+        final int h = seconds / 3600, m = (seconds % 3600) / 60, s = seconds % 60;
+        return h > 0
+                ? String.format(Locale.ROOT, "%d:%02d:%02d", h, m, s)
+                : String.format(Locale.ROOT, "%d:%02d", m, s);
     }
 }

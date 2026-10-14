@@ -102,7 +102,6 @@ public class YawellRingConstants {
     public static final String PREF_WORKOUT_RESUME = DeviceSettingsPreferenceConst.PREF_PHONE_WORKOUT_RESUME;
     public static final String PREF_WORKOUT_STOP = DeviceSettingsPreferenceConst.PREF_PHONE_WORKOUT_STOP;
     public static final String PREF_WORKOUT_STATE = DeviceSettingsPreferenceConst.PREF_PHONE_WORKOUT_STATE;
-    public static final String PREF_WORKOUT_STATUS = DeviceSettingsPreferenceConst.PREF_PHONE_WORKOUT_STATUS;
     public static final String WORKOUT_STATE_IDLE = DeviceSettingsPreferenceConst.PHONE_WORKOUT_STATE_IDLE;
     public static final String WORKOUT_STATE_RUNNING = DeviceSettingsPreferenceConst.PHONE_WORKOUT_STATE_RUNNING;
     public static final String WORKOUT_STATE_PAUSED = DeviceSettingsPreferenceConst.PHONE_WORKOUT_STATE_PAUSED;
