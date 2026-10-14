@@ -6,21 +6,30 @@
     android:orientation="vertical"
     tools:context="nodomain.freeyourgadget.gadgetbridge.activities.charts.ActivityChartsActivity$PlaceholderFragment">
 
-    <TextView
-        android:id="@+id/stepsDateView"
+    <LinearLayout
+        android:id="@+id/stepsListHeader"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="15dp"
-        android:layout_marginBottom="@dimen/chart_section_spacing"
-        android:gravity="center"
-        android:textColor="?attr/textColorPrimary"
-        android:textSize="20sp" />
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/stepsDateView"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="15dp"
+            android:layout_marginBottom="@dimen/chart_section_spacing"
+            android:gravity="center"
+            android:textColor="?attr/textColorPrimary"
+            android:textSize="20sp" />
+
+        <include layout="@layout/phone_workout_card" />
+    </LinearLayout>
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/itemListView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_below="@id/stepsDateView"
+        android:layout_below="@id/stepsListHeader"
         android:clipToPadding="false"
         android:paddingBottom="88dp" />
 

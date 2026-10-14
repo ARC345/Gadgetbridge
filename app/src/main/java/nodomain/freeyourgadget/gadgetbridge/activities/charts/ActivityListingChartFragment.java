@@ -62,6 +62,7 @@ public class ActivityListingChartFragment extends AbstractActivityChartFragment<
     private View rootView;
     private ActivityListingAdapter stepListAdapter;
     private TextView stepsDateView;
+    private PhoneWorkoutCard workoutCard;
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
@@ -92,6 +93,8 @@ public class ActivityListingChartFragment extends AbstractActivityChartFragment<
         });
 
         stepsDateView = rootView.findViewById(R.id.stepsDateView);
+        workoutCard = new PhoneWorkoutCard(rootView);
+        workoutCard.bind(getChartsHost().getDevice());
         FloatingActionButton fab;
         fab = rootView.findViewById(R.id.fab);
         fab.setVisibility(View.VISIBLE);
@@ -102,6 +105,23 @@ public class ActivityListingChartFragment extends AbstractActivityChartFragment<
         return rootView;
     }
 
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        // Re-bind so the card picks up connection changes made while it was hidden
+        if (workoutCard != null) {
+            workoutCard.bind(getChartsHost().getDevice());
+        }
+    }
+
+    @Override
+    public void onDestroyView() {
+        if (workoutCard != null) {
+            workoutCard.unregister();
+        }
+        super.onDestroyView();
+    }
 
     @Override
     public String getTitle() {

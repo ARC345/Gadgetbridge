@@ -312,6 +312,16 @@ public interface DeviceCoordinator {
     boolean supportsVO2Max(@NonNull final GBDevice device);
 
     /**
+     * Whether a workout can be started, paused and stopped on the device from the phone.
+     * The device support handles the commands in onSendConfiguration
+     * (DeviceSettingsPreferenceConst.PREF_PHONE_WORKOUT_*) and writes the workout state
+     * and a status line to the device preferences.
+     */
+    default boolean supportsPhoneStartedWorkouts(@NonNull final GBDevice device) {
+        return false;
+    }
+
+    /**
      * Returns true if this device supports distinguishing VO2 max per sport (running / cycling).
      */
     boolean supportsVO2MultiSport(@NonNull final GBDevice device);

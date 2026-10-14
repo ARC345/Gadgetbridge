@@ -18,6 +18,8 @@ package nodomain.freeyourgadget.gadgetbridge.devices.yawell.ring;
 
 import java.util.UUID;
 
+import nodomain.freeyourgadget.gadgetbridge.activities.devicesettings.DeviceSettingsPreferenceConst;
+
 public class YawellRingConstants {
     public static final UUID CHARACTERISTIC_SERVICE_V1 = UUID.fromString("6e40fff0-b5a3-f393-e0a9-e50e24dcca9e");
     public static final UUID CHARACTERISTIC_SERVICE_V2 = UUID.fromString("de5bf728-d711-4e47-af26-65e3012a5dc7");
@@ -93,17 +95,15 @@ public class YawellRingConstants {
     public static final byte PHONE_SPORT_CONTINUE = 0x03;
     public static final byte PHONE_SPORT_STOP = 0x04;
 
-    public static final String PREF_WORKOUT_SPORT = "qore_workout_sport";
-    public static final String PREF_WORKOUT_START = "qore_workout_start";
-    public static final String PREF_WORKOUT_PAUSE = "qore_workout_pause";
-    public static final String PREF_WORKOUT_RESUME = "qore_workout_resume";
-    public static final String PREF_WORKOUT_STOP = "qore_workout_stop";
-
-    // Written by the device support, read by the workout settings screen to show
-    // the right buttons and a live status line.
-    public static final String PREF_WORKOUT_STATE = "qore_workout_state";
-    public static final String PREF_WORKOUT_STATUS = "qore_workout_status";
-    public static final String WORKOUT_STATE_IDLE = "idle";
-    public static final String WORKOUT_STATE_RUNNING = "running";
-    public static final String WORKOUT_STATE_PAUSED = "paused";
+    // Shared phone-started workout keys, see DeviceSettingsPreferenceConst
+    public static final String PREF_WORKOUT_SPORT = DeviceSettingsPreferenceConst.PREF_PHONE_WORKOUT_SPORT;
+    public static final String PREF_WORKOUT_START = DeviceSettingsPreferenceConst.PREF_PHONE_WORKOUT_START;
+    public static final String PREF_WORKOUT_PAUSE = DeviceSettingsPreferenceConst.PREF_PHONE_WORKOUT_PAUSE;
+    public static final String PREF_WORKOUT_RESUME = DeviceSettingsPreferenceConst.PREF_PHONE_WORKOUT_RESUME;
+    public static final String PREF_WORKOUT_STOP = DeviceSettingsPreferenceConst.PREF_PHONE_WORKOUT_STOP;
+    public static final String PREF_WORKOUT_STATE = DeviceSettingsPreferenceConst.PREF_PHONE_WORKOUT_STATE;
+    public static final String PREF_WORKOUT_STATUS = DeviceSettingsPreferenceConst.PREF_PHONE_WORKOUT_STATUS;
+    public static final String WORKOUT_STATE_IDLE = DeviceSettingsPreferenceConst.PHONE_WORKOUT_STATE_IDLE;
+    public static final String WORKOUT_STATE_RUNNING = DeviceSettingsPreferenceConst.PHONE_WORKOUT_STATE_RUNNING;
+    public static final String WORKOUT_STATE_PAUSED = DeviceSettingsPreferenceConst.PHONE_WORKOUT_STATE_PAUSED;
 }
