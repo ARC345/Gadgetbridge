@@ -39,6 +39,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Calendar;
+import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -93,6 +94,7 @@ public class ActivityListingChartFragment extends AbstractActivityChartFragment<
 
         stepsDateView = rootView.findViewById(R.id.stepsDateView);
         workoutCard = new PhoneWorkoutCard(rootView);
+        workoutCard.setOnWorkoutFinished(this::refresh);
         workoutCard.bind(getChartsHost().getDevice());
         FloatingActionButton fab;
         fab = rootView.findViewById(R.id.fab);
@@ -163,6 +165,8 @@ public class ActivityListingChartFragment extends AbstractActivityChartFragment<
             emptySession.setSessionType(ActivitySession.SESSION_EMPTY);
             stepSessions.add(emptySession); //this is to have an empty item at the end to be able to use FAB without it blocking anything
             ongoingSession = stepAnalysis.getOngoingSessions(stepSessions);
+            // Newest first: reverse the sessions between the summary (first) and the spacer (last)
+            Collections.reverse(stepSessions.subList(1, stepSessions.size() - 1));
         }
         return new MyChartsData(stepSessions, ongoingSession);
     }
@@ -185,6 +189,7 @@ public class ActivityListingChartFragment extends AbstractActivityChartFragment<
 
         Date activityDate = new Date(tsDateTo * 1000L);
         stepsDateView.setText(DateTimeUtils.formatDate(activityDate, DateUtils.FORMAT_SHOW_WEEKDAY));
+        workoutCard.setShowForToday(DateUtils.isToday(activityDate.getTime()));
 
         if (GBApplication.getPrefs().getBoolean("charts_show_ongoing_activity", true)) {
             if (mcd.getOngoingSession() != null && DateUtils.isToday(activityDate.getTime())) {

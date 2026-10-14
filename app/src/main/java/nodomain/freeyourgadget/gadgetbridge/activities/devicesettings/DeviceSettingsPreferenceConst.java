@@ -302,10 +302,13 @@ public class DeviceSettingsPreferenceConst {
     public static final String PREF_WORKOUT_START_ON_PHONE = "workout_start_on_phone";
 
     // Workouts started on the device from the phone (see DeviceCoordinator#supportsPhoneStartedWorkouts).
-    // The sport is chosen by the user; state and status are written by the device support.
+    // The sport is chosen by the user. The live values below are written by the device support
+    // while a workout runs; the activity list card formats them.
     public static final String PREF_PHONE_WORKOUT_SPORT = "phone_workout_sport";
     public static final String PREF_PHONE_WORKOUT_STATE = "phone_workout_state";
-    public static final String PREF_PHONE_WORKOUT_STATUS = "phone_workout_status";
+    public static final String PREF_PHONE_WORKOUT_ACTIVE_SPORT_NAME = "phone_workout_active_sport_name";
+    public static final String PREF_PHONE_WORKOUT_ELAPSED_SECONDS = "phone_workout_elapsed_seconds";
+    public static final String PREF_PHONE_WORKOUT_HEART_RATE = "phone_workout_heart_rate";
     public static final String PHONE_WORKOUT_STATE_IDLE = "idle";
     public static final String PHONE_WORKOUT_STATE_RUNNING = "running";
     public static final String PHONE_WORKOUT_STATE_PAUSED = "paused";
