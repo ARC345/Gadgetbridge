@@ -98,4 +98,12 @@ public class YawellRingConstants {
     public static final String PREF_WORKOUT_PAUSE = "qore_workout_pause";
     public static final String PREF_WORKOUT_RESUME = "qore_workout_resume";
     public static final String PREF_WORKOUT_STOP = "qore_workout_stop";
+
+    // Written by the device support, read by the workout settings screen to show
+    // the right buttons and a live status line.
+    public static final String PREF_WORKOUT_STATE = "qore_workout_state";
+    public static final String PREF_WORKOUT_STATUS = "qore_workout_status";
+    public static final String WORKOUT_STATE_IDLE = "idle";
+    public static final String WORKOUT_STATE_RUNNING = "running";
+    public static final String WORKOUT_STATE_PAUSED = "paused";
 }
