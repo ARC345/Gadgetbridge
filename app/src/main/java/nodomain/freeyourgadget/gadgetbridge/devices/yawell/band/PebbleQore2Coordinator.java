@@ -1,0 +1,46 @@
+/*  Copyright (C) 2026 TODO: author
+
+    This file is part of Gadgetbridge.
+
+    Gadgetbridge is free software: you can redistribute it and/or modify
+    it under the terms of the GNU Affero General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Gadgetbridge is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU Affero General Public License for more details.
+
+    You should have received a copy of the GNU Affero General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>. */
+package nodomain.freeyourgadget.gadgetbridge.devices.yawell.band;
+
+import androidx.annotation.NonNull;
+
+import java.util.regex.Pattern;
+
+import nodomain.freeyourgadget.gadgetbridge.R;
+import nodomain.freeyourgadget.gadgetbridge.devices.yawell.ring.AbstractYawellRingCoordinator;
+import nodomain.freeyourgadget.gadgetbridge.impl.GBDevice;
+
+/**
+ * Pebble Qore 2 fitness band. Uses the same Nordic UART and de5bf728 command
+ * service as the Colmi/Yawell rings, and the same 16-byte command framing.
+ */
+public class PebbleQore2Coordinator extends AbstractYawellRingCoordinator {
+    @Override
+    protected Pattern getSupportedDeviceName() {
+        return Pattern.compile("PBL Qore 2.*");
+    }
+
+    @Override
+    public int getDeviceNameResource() {
+        return R.string.devicetype_pebble_qore2;
+    }
+
+    @Override
+    public DeviceKind getDeviceKind(@NonNull GBDevice device) {
+        return DeviceKind.FITNESS_BAND;
+    }
+}
