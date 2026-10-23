@@ -24,6 +24,7 @@ import nodomain.freeyourgadget.gadgetbridge.GBApplication
 import nodomain.freeyourgadget.gadgetbridge.R
 import nodomain.freeyourgadget.gadgetbridge.activities.AbstractPreferenceFragment
 import nodomain.freeyourgadget.gadgetbridge.activities.AbstractSettingsActivityV2
+import nodomain.freeyourgadget.gadgetbridge.service.receivers.GBAutoFetchReceiver
 import nodomain.freeyourgadget.gadgetbridge.util.GBPrefs
 
 class AutomationsSettingsActivity : AbstractSettingsActivityV2() {
@@ -56,6 +57,33 @@ class AutomationsSettingsActivity : AbstractSettingsActivityV2() {
                     )
                     prefAutoFetchInterval.setSummary(summary)
                 }
+
+                setInputTypeFor(GBPrefs.PREF_AUTO_FETCH_PERIODIC_INTERVAL, InputType.TYPE_CLASS_NUMBER)
+
+                val prefPeriodicInterval = findPreference<Preference>(GBPrefs.PREF_AUTO_FETCH_PERIODIC_INTERVAL)
+                if (prefPeriodicInterval != null) {
+                    prefPeriodicInterval.setOnPreferenceChangeListener { preference: Preference?, periodicInterval: Any? ->
+                        preference!!.setSummary(periodicFetchSummary((periodicInterval as String?)!!.toIntOrNull() ?: 0))
+                        // The new value is stored after this listener returns
+                        listView?.post { GBAutoFetchReceiver.schedulePeriodicFetch(requireContext().applicationContext) }
+                        true
+                    }
+                    prefPeriodicInterval.setSummary(
+                        periodicFetchSummary(GBApplication.getPrefs().getInt(GBPrefs.PREF_AUTO_FETCH_PERIODIC_INTERVAL, 0))
+                    )
+                }
+
+                findPreference<Preference>(GBPrefs.PREF_AUTO_FETCH_ENABLED)?.setOnPreferenceChangeListener { _, _ ->
+                    listView?.post { GBAutoFetchReceiver.schedulePeriodicFetch(requireContext().applicationContext) }
+                    true
+                }
+            }
+
+            private fun periodicFetchSummary(minutes: Int): String {
+                return String.format(
+                    requireContext().applicationContext.getString(R.string.pref_auto_fetch_periodic_summary),
+                    minutes
+                )
             }
         }
     }
