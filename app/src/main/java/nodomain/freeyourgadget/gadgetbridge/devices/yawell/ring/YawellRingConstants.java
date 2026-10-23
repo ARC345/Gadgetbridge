@@ -47,11 +47,31 @@ public class YawellRingConstants {
     public static final byte CMD_AUTO_TEMP_PREF = 0x3a;
     public static final byte CMD_SYNC_ACTIVITY = 0x43;
     public static final byte CMD_FIND_DEVICE = 0x50;
+    public static final byte CMD_SET_MESSAGE_PUSH = 0x60;
+    public static final byte CMD_PUSH_MESSAGE = 0x72;
     public static final byte CMD_MANUAL_HEART_RATE = 0x69;
     public static final byte CMD_PHONE_SPORT = 0x77;
     public static final byte CMD_PHONE_SPORT_NOTIFY = 0x78;
     public static final byte CMD_NOTIFICATION = 0x73;
     public static final byte CMD_BIG_DATA_V2 = (byte) 0xbc;
+
+    // CMD_PUSH_MESSAGE: 72 <type> <packet count> <packet index, from 1> <11 bytes of UTF-8 text>
+    public static final int PUSH_MESSAGE_CHUNK_SIZE = 11;
+    public static final int PUSH_MESSAGE_MAX_CHARS = 256;
+    public static final byte PUSH_TYPE_CALL = 0;
+    public static final byte PUSH_TYPE_SMS = 1;
+    public static final byte PUSH_TYPE_QQ = 2;
+    public static final byte PUSH_TYPE_WECHAT = 3;
+    public static final byte PUSH_TYPE_CALL_STOP = 4;
+    public static final byte PUSH_TYPE_FACEBOOK = 5;
+    public static final byte PUSH_TYPE_WHATSAPP = 6;
+    public static final byte PUSH_TYPE_TWITTER = 7;
+    public static final byte PUSH_TYPE_SKYPE = 8;
+    public static final byte PUSH_TYPE_LINE = 9;
+    public static final byte PUSH_TYPE_LINKEDIN = 10;
+    public static final byte PUSH_TYPE_INSTAGRAM = 11;
+    public static final byte PUSH_TYPE_SNAPCHAT = 13;
+    public static final byte PUSH_TYPE_OTHER = 14;
     public static final byte CMD_FACTORY_RESET = (byte) 0xff;
 
     public static final byte PREF_READ = 0x01;

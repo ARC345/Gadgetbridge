@@ -23,6 +23,7 @@ import nodomain.freeyourgadget.gadgetbridge.activities.devicesettings.DeviceSett
 import nodomain.freeyourgadget.gadgetbridge.activities.devicesettings.DeviceSpecificSettingsScreen
 import nodomain.freeyourgadget.gadgetbridge.activities.devicesettings.dsl.DeviceSettingsSpec
 import nodomain.freeyourgadget.gadgetbridge.activities.devicesettings.dsl.components.heartrateMeasurementInterval
+import nodomain.freeyourgadget.gadgetbridge.activities.devicesettings.dsl.components.sendAppNotifications
 import nodomain.freeyourgadget.gadgetbridge.activities.devicesettings.dsl.deviceSettings
 import nodomain.freeyourgadget.gadgetbridge.capabilities.HeartRateCapability.MeasurementInterval
 import nodomain.freeyourgadget.gadgetbridge.devices.AbstractBLEDeviceCoordinator
@@ -215,6 +216,11 @@ abstract class AbstractYawellRingCoordinator : AbstractBLEDeviceCoordinator() {
         return intArrayOf(1, 30, 60, 80)
     }
 
+    /** Whether the device accepts CMD_PUSH_MESSAGE for app notifications and incoming calls. */
+    open fun supportsPushMessages(device: GBDevice): Boolean {
+        return false
+    }
+
     override fun getDeviceSettings(device: GBDevice): DeviceSettingsSpec = deviceSettings {
         screen(
             key = DeviceSpecificSettingsScreen.HEALTH.key,
@@ -252,6 +258,14 @@ abstract class AbstractYawellRingCoordinator : AbstractBLEDeviceCoordinator() {
                 defaultValue = false,
                 visibleWhen = { supportsContinuousTemperature(device) },
             )
+        }
+        screen(
+            key = DeviceSpecificSettingsScreen.CALLS_AND_NOTIFICATIONS.key,
+            title = R.string.pref_header_calls_and_notifications,
+            icon = R.drawable.ic_notifications,
+            visibleWhen = { supportsPushMessages(device) },
+        ) {
+            sendAppNotifications()
         }
         screen(
             key = DeviceSpecificSettingsScreen.WORKOUT.key,

@@ -36,6 +36,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
@@ -56,6 +57,7 @@ import nodomain.freeyourgadget.gadgetbridge.database.DBHelper;
 import nodomain.freeyourgadget.gadgetbridge.deviceevents.GBDeviceEventBatteryInfo;
 import nodomain.freeyourgadget.gadgetbridge.deviceevents.GBDeviceEventVersionInfo;
 import nodomain.freeyourgadget.gadgetbridge.devices.ColmiHeartRateSampleProvider;
+import nodomain.freeyourgadget.gadgetbridge.devices.yawell.ring.AbstractYawellRingCoordinator;
 import nodomain.freeyourgadget.gadgetbridge.devices.yawell.ring.YawellRingLiveActivityContext;
 import nodomain.freeyourgadget.gadgetbridge.devices.yawell.ring.YawellRingConstants;
 import nodomain.freeyourgadget.gadgetbridge.devices.yawell.ring.YawellRingPacketHandler;
@@ -75,8 +77,11 @@ import nodomain.freeyourgadget.gadgetbridge.model.ActivityTrack;
 import nodomain.freeyourgadget.gadgetbridge.model.ActivityUser;
 import nodomain.freeyourgadget.gadgetbridge.model.Alarm;
 import nodomain.freeyourgadget.gadgetbridge.model.BatteryState;
+import nodomain.freeyourgadget.gadgetbridge.model.CallSpec;
 import nodomain.freeyourgadget.gadgetbridge.model.DistanceUnit;
 import nodomain.freeyourgadget.gadgetbridge.model.GPSCoordinate;
+import nodomain.freeyourgadget.gadgetbridge.model.NotificationSpec;
+import nodomain.freeyourgadget.gadgetbridge.model.NotificationType;
 import nodomain.freeyourgadget.gadgetbridge.service.btle.AbstractBTLESingleDeviceSupport;
 import nodomain.freeyourgadget.gadgetbridge.service.btle.BLETypeConversions;
 import nodomain.freeyourgadget.gadgetbridge.service.btle.GattService;
@@ -122,6 +127,11 @@ public class YawellRingDeviceSupport extends AbstractBTLESingleDeviceSupport {
     private boolean workoutUsesOpenTracks = false;
     private Location workoutLastLocation = null;
     private long workoutLastLocationMillis = 0;
+
+    // An incoming call rings the band only for this time, then the ring is stopped
+    private static final long CALL_RING_MILLIS = 3000;
+    private boolean callRinging = false;
+    private final Runnable stopCallRing = this::stopCallRing;
 
     public YawellRingDeviceSupport() {
         super(LOG);
@@ -221,6 +231,10 @@ public class YawellRingDeviceSupport extends AbstractBTLESingleDeviceSupport {
         requestSettingsFromRing();
         if (getDevice().getDeviceCoordinator().getAlarmSlotCount(getDevice()) > 0) {
             fetchAlarms();
+        }
+        if (supportsMessagePush()) {
+            // Turns on message push on the band, with the same mask that Halo sends
+            sendWrite("setMessagePush", buildPacket(new byte[]{YawellRingConstants.CMD_SET_MESSAGE_PUSH, (byte) 0xff, (byte) 0x9f}));
         }
     }
 
@@ -1016,6 +1030,115 @@ public class YawellRingDeviceSupport extends AbstractBTLESingleDeviceSupport {
         byte[] resetPacket = buildPacket(new byte[]{YawellRingConstants.CMD_FACTORY_RESET, 0x66, 0x66});
         LOG.info("Factory reset request sent: {}", StringUtils.bytesToHex(resetPacket));
         sendWrite("resetRequest", resetPacket);
+    }
+
+    private boolean supportsMessagePush() {
+        return getDevice().getDeviceCoordinator() instanceof AbstractYawellRingCoordinator coordinator
+                && coordinator.supportsPushMessages(getDevice());
+    }
+
+    @Override
+    public void onNotification(final NotificationSpec notificationSpec) {
+        if (!supportsMessagePush()
+                || !getDevicePrefs().getBoolean(DeviceSettingsPreferenceConst.PREF_SEND_APP_NOTIFICATIONS, true)) {
+            return;
+        }
+        final String title = firstNonEmpty(notificationSpec.getTitle(), notificationSpec.getSender(), notificationSpec.getSourceName());
+        final String body = firstNonEmpty(notificationSpec.getBody(), notificationSpec.getSubject());
+        final String text = title.isEmpty() ? body : body.isEmpty() ? title : title + ":" + body;
+        sendPushMessage("pushNotification", pushTypeFor(notificationSpec.getType()), text);
+    }
+
+    @Override
+    public void onSetCallState(final CallSpec callSpec) {
+        if (!supportsMessagePush()) {
+            return;
+        }
+        backgroundTasksHandler.removeCallbacks(stopCallRing);
+        if (callSpec.getCommand() == CallSpec.CALL_INCOMING) {
+            sendPushMessage("pushIncomingCall", YawellRingConstants.PUSH_TYPE_CALL,
+                    firstNonEmpty(callSpec.getName(), callSpec.getNumber(), "Call"));
+            callRinging = true;
+            backgroundTasksHandler.postDelayed(stopCallRing, CALL_RING_MILLIS);
+        } else if (callRinging) {
+            stopCallRing();
+        }
+    }
+
+    private void stopCallRing() {
+        callRinging = false;
+        sendPushMessage("pushCallStop", YawellRingConstants.PUSH_TYPE_CALL_STOP, "Dialout");
+    }
+
+    /** Sends text to the band as CMD_PUSH_MESSAGE packets, 11 bytes of UTF-8 in each. */
+    private void sendPushMessage(final String taskName, final byte type, final String text) {
+        String limited = text;
+        if (limited.length() > YawellRingConstants.PUSH_MESSAGE_MAX_CHARS) {
+            limited = limited.substring(0, YawellRingConstants.PUSH_MESSAGE_MAX_CHARS);
+        }
+        final byte[] bytes = limited.getBytes(StandardCharsets.UTF_8);
+        final int chunkSize = YawellRingConstants.PUSH_MESSAGE_CHUNK_SIZE;
+        final int packetCount = Math.max(1, (bytes.length + chunkSize - 1) / chunkSize);
+
+        final BluetoothGattCharacteristic characteristic = getCharacteristic(YawellRingConstants.CHARACTERISTIC_WRITE);
+        if (characteristic == null) {
+            return;
+        }
+        final TransactionBuilder builder = createTransactionBuilder(taskName);
+        for (int i = 0; i < packetCount; i++) {
+            final byte[] contents = new byte[4 + chunkSize];
+            contents[0] = YawellRingConstants.CMD_PUSH_MESSAGE;
+            contents[1] = type;
+            contents[2] = (byte) packetCount;
+            contents[3] = (byte) (i + 1);
+            final int offset = i * chunkSize;
+            System.arraycopy(bytes, offset, contents, 4, Math.min(chunkSize, Math.max(0, bytes.length - offset)));
+            builder.write(characteristic, buildPacket(contents));
+        }
+        LOG.info("Push message sent: type {}, {} packets", type, packetCount);
+        builder.queue();
+    }
+
+    private static byte pushTypeFor(final NotificationType type) {
+        if (type == null) {
+            return YawellRingConstants.PUSH_TYPE_OTHER;
+        }
+        switch (type) {
+            case GENERIC_SMS:
+                return YawellRingConstants.PUSH_TYPE_SMS;
+            case QQ:
+                return YawellRingConstants.PUSH_TYPE_QQ;
+            case WECHAT:
+                return YawellRingConstants.PUSH_TYPE_WECHAT;
+            case FACEBOOK:
+            case FACEBOOK_MESSENGER:
+                return YawellRingConstants.PUSH_TYPE_FACEBOOK;
+            case WHATSAPP:
+                return YawellRingConstants.PUSH_TYPE_WHATSAPP;
+            case TWITTER:
+                return YawellRingConstants.PUSH_TYPE_TWITTER;
+            case SKYPE:
+                return YawellRingConstants.PUSH_TYPE_SKYPE;
+            case LINE:
+                return YawellRingConstants.PUSH_TYPE_LINE;
+            case LINKEDIN:
+                return YawellRingConstants.PUSH_TYPE_LINKEDIN;
+            case INSTAGRAM:
+                return YawellRingConstants.PUSH_TYPE_INSTAGRAM;
+            case SNAPCHAT:
+                return YawellRingConstants.PUSH_TYPE_SNAPCHAT;
+            default:
+                return YawellRingConstants.PUSH_TYPE_OTHER;
+        }
+    }
+
+    private static String firstNonEmpty(final String... values) {
+        for (final String value : values) {
+            if (value != null && !value.trim().isEmpty()) {
+                return value.trim();
+            }
+        }
+        return "";
     }
 
     @Override

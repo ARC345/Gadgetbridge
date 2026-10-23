@@ -81,6 +81,11 @@ public class PebbleQore2Coordinator extends AbstractYawellRingCoordinator {
      * from its heart rate data, see {@link EstimatedVo2MaxSampleProvider}.
      */
     @Override
+    public boolean supportsPushMessages(@NonNull final GBDevice device) {
+        return true;
+    }
+
+    @Override
     public boolean supportsVO2Max(@NonNull final GBDevice device) {
         return true;
     }
