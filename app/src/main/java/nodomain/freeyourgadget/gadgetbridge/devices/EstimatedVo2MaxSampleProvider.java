@@ -1,4 +1,4 @@
-/*  Copyright (C) 2026 TODO: author
+/*  Copyright (C) 2026 Arnav Rastogi
 
     This file is part of Gadgetbridge.
 
