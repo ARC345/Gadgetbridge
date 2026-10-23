@@ -73,6 +73,7 @@ public class YawellRingConstants {
     public static final int PUSH_CHUNK_SIZE = 11;
     public static final int PUSH_MAX_CHUNKS = 4;
     public static final String PREF_NOTIFICATION_VIBRATION_COUNT = "yawell_notification_vibration_count";
+    public static final String PREF_CALL_VIBRATION_SECONDS = "yawell_call_vibration_seconds";
 
     public static final byte BIG_DATA_TYPE_TEMPERATURE = 0x25;
     public static final byte BIG_DATA_TYPE_SLEEP = 0x27;

@@ -273,9 +273,18 @@ abstract class AbstractYawellRingCoordinator : AbstractBLEDeviceCoordinator() {
                 key = YawellRingConstants.PREF_NOTIFICATION_VIBRATION_COUNT,
                 title = R.string.pref_header_vibration_count,
                 icon = R.drawable.ic_vibration,
-                min = 1,
+                min = 0,
                 max = 5,
                 defaultValue = 3,
+            )
+            seekbar(
+                key = YawellRingConstants.PREF_CALL_VIBRATION_SECONDS,
+                title = R.string.yawell_call_vibration_seconds_title,
+                summary = R.string.yawell_call_vibration_seconds_summary,
+                icon = R.drawable.ic_phone,
+                min = 0,
+                max = 30,
+                defaultValue = 0,
             )
         }
         screen(

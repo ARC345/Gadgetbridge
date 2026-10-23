@@ -1078,11 +1078,26 @@ public class YawellRingDeviceSupport extends AbstractBTLESingleDeviceSupport {
         BluetoothGattCharacteristic characteristic = getCharacteristic(YawellRingConstants.CHARACTERISTIC_WRITE);
         if (characteristic == null) return;
 
+        backgroundTasksHandler.removeCallbacks(stopCallVibration);
         String caller = callSpec.getName() != null ? callSpec.getName() : callSpec.getNumber();
         TransactionBuilder builder = createTransactionBuilder("pushCallState");
         writePushMessage(builder, characteristic, type, caller);
         builder.queue();
+
+        // Optionally stop the vibration early, so an incoming call gives only a short ring
+        int vibrationSeconds = getDevicePrefs().getInt(YawellRingConstants.PREF_CALL_VIBRATION_SECONDS, 0);
+        if (type == YawellRingConstants.PUSH_TYPE_CALL_INCOMING && vibrationSeconds > 0) {
+            backgroundTasksHandler.postDelayed(stopCallVibration, vibrationSeconds * 1000L);
+        }
     }
+
+    private final Runnable stopCallVibration = () -> {
+        BluetoothGattCharacteristic characteristic = getCharacteristic(YawellRingConstants.CHARACTERISTIC_WRITE);
+        if (characteristic == null) return;
+        TransactionBuilder builder = createTransactionBuilder("stopCallVibration");
+        writePushMessage(builder, characteristic, YawellRingConstants.PUSH_TYPE_CALL_STOP, "");
+        builder.queue();
+    };
 
     /**
      * A push message is split into chunks of 11 bytes of UTF-8 text, each sent as
