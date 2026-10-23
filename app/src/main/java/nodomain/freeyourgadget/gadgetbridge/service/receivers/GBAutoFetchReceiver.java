@@ -16,9 +16,12 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>. */
 package nodomain.freeyourgadget.gadgetbridge.service.receivers;
 
+import android.app.AlarmManager;
+import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.os.SystemClock;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,6 +29,7 @@ import org.slf4j.LoggerFactory;
 import java.util.Date;
 import java.util.List;
 
+import nodomain.freeyourgadget.gadgetbridge.BuildConfig;
 import nodomain.freeyourgadget.gadgetbridge.GBApplication;
 import nodomain.freeyourgadget.gadgetbridge.impl.GBDevice;
 import nodomain.freeyourgadget.gadgetbridge.model.RecordedDataTypes;
@@ -38,9 +42,49 @@ public class GBAutoFetchReceiver extends BroadcastReceiver {
 
     private static final String PREF_AUTO_FETCH_LAST_TIME = "auto_fetch_last_time";
 
+    /** Broadcast by the alarm that {@link #schedulePeriodicFetch} sets. */
+    public static final String ACTION_PERIODIC_FETCH = "nodomain.freeyourgadget.gadgetbridge.AUTO_FETCH_PERIODIC";
+
+    /**
+     * Sets the alarm for the next periodic fetch, or cancels it if periodic fetches are off.
+     * The alarm is allowed while idle, so it also fires with the screen locked and in Doze.
+     */
+    public static void schedulePeriodicFetch(final Context context) {
+        final GBPrefs prefs = GBApplication.getPrefs();
+        final int intervalMinutes = prefs.getBoolean(GBPrefs.PREF_AUTO_FETCH_ENABLED, false)
+                ? prefs.getInt(GBPrefs.PREF_AUTO_FETCH_PERIODIC_INTERVAL, 0)
+                : 0;
+
+        final AlarmManager am = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
+        if (am == null) {
+            return;
+        }
+        final Intent intent = new Intent(ACTION_PERIODIC_FETCH);
+        intent.setPackage(BuildConfig.APPLICATION_ID);
+        final PendingIntent pendingIntent = PendingIntent.getBroadcast(context, 0, intent, PendingIntent.FLAG_IMMUTABLE);
+
+        am.cancel(pendingIntent);
+        if (intervalMinutes <= 0) {
+            LOG.debug("Periodic auto fetch is off");
+            return;
+        }
+
+        LOG.info("Scheduling next periodic auto fetch in {} minutes", intervalMinutes);
+        am.setAndAllowWhileIdle(
+                AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                SystemClock.elapsedRealtime() + intervalMinutes * 60 * 1000L,
+                pendingIntent
+        );
+    }
+
     @Override
     public void onReceive(final Context context, final Intent intent) {
         LOG.info("Trigger auto fetch by {}", intent.getAction());
+
+        if (ACTION_PERIODIC_FETCH.equals(intent.getAction())) {
+            // Each alarm fires once, so set the next one first
+            schedulePeriodicFetch(context);
+        }
 
         final GBPrefs prefs = GBApplication.getPrefs();
         if (!prefs.getBoolean(GBPrefs.PREF_AUTO_FETCH_ENABLED, false)) {

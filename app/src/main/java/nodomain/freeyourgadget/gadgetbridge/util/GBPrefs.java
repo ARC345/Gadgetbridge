@@ -69,6 +69,7 @@ public class GBPrefs extends Prefs {
 
     public static final String PREF_AUTO_FETCH_ENABLED = "auto_fetch_enabled";
     public static final String PREF_AUTO_FETCH_INTERVAL_LIMIT = "auto_fetch_interval_limit";
+    public static final String PREF_AUTO_FETCH_PERIODIC_INTERVAL = "auto_fetch_periodic_interval";
 
     // These should get the prefix appended - see below
     public static final String AUTO_EXPORT_ENABLED = "auto_export_enabled";

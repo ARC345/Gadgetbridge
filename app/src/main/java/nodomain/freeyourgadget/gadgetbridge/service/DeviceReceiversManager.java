@@ -357,7 +357,10 @@ class DeviceReceiversManager {
 
             if (features.supports(Feature.DATA_FETCHING) && mGBAutoFetchReceiver == null) {
                 mGBAutoFetchReceiver = new GBAutoFetchReceiver();
-                ContextCompat.registerReceiver(service, mGBAutoFetchReceiver, new IntentFilter("android.intent.action.USER_PRESENT"), ContextCompat.RECEIVER_EXPORTED);
+                final IntentFilter autoFetchFilter = new IntentFilter("android.intent.action.USER_PRESENT");
+                autoFetchFilter.addAction(GBAutoFetchReceiver.ACTION_PERIODIC_FETCH);
+                ContextCompat.registerReceiver(service, mGBAutoFetchReceiver, autoFetchFilter, ContextCompat.RECEIVER_EXPORTED);
+                GBAutoFetchReceiver.schedulePeriodicFetch(service);
             }
         } else {
             if (mPhoneCallReceiver != null) {
