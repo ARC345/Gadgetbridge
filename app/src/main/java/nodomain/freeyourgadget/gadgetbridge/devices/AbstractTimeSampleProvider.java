@@ -98,6 +98,22 @@ public abstract class AbstractTimeSampleProvider<T extends AbstractTimeSample> i
         getSampleDao().insertOrReplaceInTx(activitySamples);
     }
 
+    /**
+     * Deletes the sample of this device at the given time, for example a weight measurement
+     * that belongs to someone else.
+     */
+    public void deleteSample(final long timestamp) {
+        final Device dbDevice = DBHelper.findDevice(getDevice(), getSession());
+        if (dbDevice == null) {
+            return;
+        }
+        final QueryBuilder<T> qb = getSampleDao().queryBuilder();
+        qb.where(getDeviceIdentifierSampleProperty().eq(dbDevice.getId()), getTimestampSampleProperty().eq(timestamp));
+        applyAdditionalFilters(qb);
+        qb.buildDelete().executeDeleteWithoutDetachingEntities();
+        detachFromSession();
+    }
+
     @Nullable
     @Override
     public T getLatestSample() {

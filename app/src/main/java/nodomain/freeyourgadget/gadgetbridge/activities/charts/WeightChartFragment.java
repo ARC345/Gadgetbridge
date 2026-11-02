@@ -20,12 +20,18 @@ import android.graphics.Color;
 import android.os.Bundle;
 import android.text.format.DateFormat;
 import android.view.LayoutInflater;
+import android.view.Menu;
+import android.view.MenuInflater;
+import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
+import androidx.core.view.MenuProvider;
+import androidx.lifecycle.Lifecycle;
 
 import com.github.mikephil.charting.charts.Chart;
 
@@ -292,6 +298,32 @@ public class WeightChartFragment extends AbstractChartFragment<WeightChartFragme
         refresh();
 
         return rootView;
+    }
+
+    @Override
+    public void onViewCreated(@NonNull final View view, @Nullable final Bundle savedInstanceState) {
+        super.onViewCreated(view, savedInstanceState);
+
+        // only while this chart is the visible one
+        requireActivity().addMenuProvider(new MenuProvider() {
+            @Override
+            public void onCreateMenu(@NonNull final Menu menu, @NonNull final MenuInflater menuInflater) {
+                menuInflater.inflate(R.menu.menu_weight_chart, menu);
+            }
+
+            @Override
+            public boolean onMenuItemSelected(@NonNull final MenuItem menuItem) {
+                if (menuItem.getItemId() != R.id.weight_chart_readings) {
+                    return false;
+                }
+                WeightReadingsBottomSheet.newInstance(getChartsHost().getDevice())
+                        .show(getChildFragmentManager(), WeightReadingsBottomSheet.REQUEST_KEY);
+                return true;
+            }
+        }, getViewLifecycleOwner(), Lifecycle.State.RESUMED);
+
+        getChildFragmentManager().setFragmentResultListener(WeightReadingsBottomSheet.REQUEST_KEY, getViewLifecycleOwner(),
+                (requestKey, result) -> refresh());
     }
 
     private float weightFromKg(float weight) {

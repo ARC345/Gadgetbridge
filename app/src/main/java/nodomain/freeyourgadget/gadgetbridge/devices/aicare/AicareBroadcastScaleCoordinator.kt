@@ -22,6 +22,7 @@ import de.greenrobot.dao.AbstractDao
 import de.greenrobot.dao.Property
 import nodomain.freeyourgadget.gadgetbridge.GBApplication
 import nodomain.freeyourgadget.gadgetbridge.R
+import nodomain.freeyourgadget.gadgetbridge.activities.devicesettings.DeviceSpecificSettings
 import nodomain.freeyourgadget.gadgetbridge.devices.AbstractBLEDeviceCoordinator
 import nodomain.freeyourgadget.gadgetbridge.devices.DeviceCoordinator
 import nodomain.freeyourgadget.gadgetbridge.devices.GenericWeightSampleProvider
@@ -38,6 +39,7 @@ import nodomain.freeyourgadget.gadgetbridge.util.GB
 import org.slf4j.LoggerFactory
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.math.abs
 
 /**
  * AICare (AILink) weight scales that only broadcast their readings, such as the Fitelo smart
@@ -75,7 +77,7 @@ class AicareBroadcastScaleCoordinator : AbstractBLEDeviceCoordinator() {
             }
 
             val now = System.currentTimeMillis()
-            val previous = lastSaved[device.address]
+            val previous = lastHandled[device.address]
             if (previous != null &&
                 previous.counter == reading.counter &&
                 previous.weightKg == reading.weightKg &&
@@ -84,14 +86,44 @@ class AicareBroadcastScaleCoordinator : AbstractBLEDeviceCoordinator() {
                 // the scale repeats a stable reading for 15 seconds or more
                 return true
             }
+            lastHandled[device.address] = HandledReading(reading.counter, reading.weightKg, now)
 
-            if (saveReading(device, reading, now)) {
-                lastSaved[device.address] = SavedReading(reading.counter, reading.weightKg, now)
+            if (isFromSomeoneElse(device, reading.weightKg, now)) {
+                LOG.info("Ignoring {} kg from {}, too far from the last weight", reading.weightKg, device.address)
+                GB.toast(GBApplication.getContext().getString(R.string.aicare_scale_reading_ignored, reading.weightKg), Toast.LENGTH_LONG, GB.INFO)
+            } else if (!saveReading(device, reading, now)) {
+                // try again with the next repeat of the reading
+                lastHandled.remove(device.address)
             }
             // stay in the scan filters, so that a second weigh-in right after this one is not missed
             return true
         }
         return true
+    }
+
+    /**
+     * True when the user limited the readings to those near their last weight, and this one is
+     * not. Without a recent reading to compare with, every reading is accepted.
+     */
+    private fun isFromSomeoneElse(device: GBDevice, weightKg: Float, now: Long): Boolean {
+        val toleranceKg = GBApplication.getDeviceSpecificSharedPrefs(device.address)
+            .getString(PREF_WEIGHT_TOLERANCE_KG, DEFAULT_WEIGHT_TOLERANCE_KG)
+            ?.toFloatOrNull() ?: return false
+        if (toleranceKg <= 0f) {
+            return false
+        }
+        val latest = try {
+            GBApplication.acquireDB().use { handler ->
+                GenericWeightSampleProvider(device, handler.daoSession).latestSample
+            }
+        } catch (e: Exception) {
+            LOG.error("Error reading the last weight sample", e)
+            return false
+        } ?: return false
+        if (now - latest.timestamp > REFERENCE_MAX_AGE_MILLIS) {
+            return false
+        }
+        return abs(weightKg - latest.weightKg) > toleranceKg
     }
 
     private fun saveReading(device: GBDevice, reading: AicareBroadcastScaleProtocol.Reading, timestamp: Long): Boolean {
@@ -159,13 +191,25 @@ class AicareBroadcastScaleCoordinator : AbstractBLEDeviceCoordinator() {
         return DeviceCoordinator.DeviceKind.SCALE
     }
 
-    private data class SavedReading(val counter: Int, val weightKg: Float, val timestamp: Long)
+    override fun getDeviceSpecificSettings(device: GBDevice): DeviceSpecificSettings {
+        val settings = DeviceSpecificSettings()
+        settings.addRootScreen(R.xml.devicesettings_aicare_broadcast_scale)
+        return settings
+    }
+
+    private data class HandledReading(val counter: Int, val weightKg: Float, val timestamp: Long)
 
     companion object {
         private val LOG = LoggerFactory.getLogger(AicareBroadcastScaleCoordinator::class.java)
 
+        private const val PREF_WEIGHT_TOLERANCE_KG = "aicare_scale_weight_tolerance_kg"
+        private const val DEFAULT_WEIGHT_TOLERANCE_KG = "5"
+
         private const val DUPLICATE_WINDOW_MILLIS = 10 * 60 * 1000L
 
-        private val lastSaved = ConcurrentHashMap<String, SavedReading>()
+        /** An older last weight is no reference, the user's weight may have changed since. */
+        private const val REFERENCE_MAX_AGE_MILLIS = 30 * 24 * 60 * 60 * 1000L
+
+        private val lastHandled = ConcurrentHashMap<String, HandledReading>()
     }
 }
