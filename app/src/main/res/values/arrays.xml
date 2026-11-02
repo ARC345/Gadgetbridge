@@ -248,6 +248,21 @@
         <item>right</item>
     </string-array>
 
+    <string-array name="aicare_scale_weight_tolerance">
+        <item>@string/aicare_scale_weight_tolerance_off</item>
+        <item>@string/aicare_scale_weight_tolerance_2</item>
+        <item>@string/aicare_scale_weight_tolerance_3</item>
+        <item>@string/aicare_scale_weight_tolerance_5</item>
+        <item>@string/aicare_scale_weight_tolerance_10</item>
+    </string-array>
+    <string-array name="aicare_scale_weight_tolerance_values">
+        <item>0</item>
+        <item>2</item>
+        <item>3</item>
+        <item>5</item>
+        <item>10</item>
+    </string-array>
+
     <string-array name="weardirection">
         <item>@string/buttons_on_left</item>
         <item>@string/buttons_on_right</item>

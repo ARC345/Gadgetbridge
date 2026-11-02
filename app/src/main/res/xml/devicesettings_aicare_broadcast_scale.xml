@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.preference.PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <ListPreference
+        android:defaultValue="5"
+        android:icon="@drawable/ic_emoji_people"
+        android:entries="@array/aicare_scale_weight_tolerance"
+        android:entryValues="@array/aicare_scale_weight_tolerance_values"
+        android:key="aicare_scale_weight_tolerance_kg"
+        app:useSimpleSummaryProvider="true"
+        android:title="@string/aicare_scale_weight_tolerance_title" />
+
+</androidx.preference.PreferenceScreen>

@@ -1,0 +1,9 @@
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <item
+        android:id="@+id/weight_chart_readings"
+        android:icon="@drawable/ic_history"
+        android:title="@string/weight_readings"
+        app:iconTint="?attr/actionmenu_icon_color"
+        app:showAsAction="ifRoom" />
+</menu>
