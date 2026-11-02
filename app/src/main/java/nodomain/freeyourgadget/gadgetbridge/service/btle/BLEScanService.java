@@ -54,7 +54,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
-import java.util.List;
+import java.util.HashSet;
+import java.util.Set;
 
 import nodomain.freeyourgadget.gadgetbridge.GBApplication;
 import nodomain.freeyourgadget.gadgetbridge.R;
@@ -99,6 +100,18 @@ public class BLEScanService extends Service {
     }
 
     private ScanningState currentState = ScanningState.NOT_SCANNING;
+    /** The addresses in the filters of the current scan. */
+    private final Set<String> filteredAddresses = new HashSet<>();
+
+    private static Set<String> addressesWaitingForScan() {
+        final Set<String> addresses = new HashSet<>();
+        for (GBDevice device : GBApplication.app().getDeviceManager().getDevices()) {
+            if (device.getState() == GBDevice.State.WAITING_FOR_SCAN) {
+                addresses.add(device.getAddress());
+            }
+        }
+        return addresses;
+    }
 
     /**
      * The manufacturer specific data of an {@link #EVENT_DEVICE_FOUND} intent, by manufacturer id.
@@ -312,6 +325,16 @@ public class BLEScanService extends Service {
                         (GBDevice.DeviceUpdateSubject)
                                 intent.getSerializableExtra(GBDevice.EXTRA_UPDATE_SUBJECT);
 
+                if (subject == GBDevice.DeviceUpdateSubject.DEVICE_STATE) {
+                    // a scannable device moves between WAITING_FOR_SCAN and SCANNED with this
+                    // subject; restart only when the filters change, since Android blocks apps
+                    // that start scans too often
+                    if (currentState != ScanningState.SCANNING_WITHOUT_FILTERS &&
+                            !addressesWaitingForScan().equals(filteredAddresses)) {
+                        restartScan(true);
+                    }
+                    return;
+                }
                 if (subject != GBDevice.DeviceUpdateSubject.CONNECTION_STATE) {
                     return;
                 }
@@ -413,19 +436,18 @@ public class BLEScanService extends Service {
             }
         }
         ArrayList<ScanFilter> scanFilters = null;
+        filteredAddresses.clear();
 
         if (applyFilters) {
-            List<GBDevice> devices = GBApplication.app().getDeviceManager().getDevices();
+            final Set<String> addresses = addressesWaitingForScan();
 
-            scanFilters = new ArrayList<>(devices.size());
+            scanFilters = new ArrayList<>(addresses.size());
 
-            for (GBDevice device : devices) {
-                if (device.getState() == GBDevice.State.WAITING_FOR_SCAN) {
-                    scanFilters.add(new ScanFilter.Builder()
-                            .setDeviceAddress(device.getAddress())
-                            .build()
-                    );
-                }
+            for (String address : addresses) {
+                scanFilters.add(new ScanFilter.Builder()
+                        .setDeviceAddress(address)
+                        .build()
+                );
             }
 
             if (scanFilters.isEmpty()) {
@@ -435,6 +457,7 @@ public class BLEScanService extends Service {
                 updateNotification(false, 0);
                 return;
             }
+            filteredAddresses.addAll(addresses);
         }
 
         final ScanSettings.Builder scanSettingsBuilder = new ScanSettings.Builder()
