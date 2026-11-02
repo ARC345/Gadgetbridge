@@ -76,6 +76,8 @@ import nodomain.freeyourgadget.gadgetbridge.GBApplication;
 import nodomain.freeyourgadget.gadgetbridge.GBException;
 import nodomain.freeyourgadget.gadgetbridge.R;
 import nodomain.freeyourgadget.gadgetbridge.activities.HeartRateUtils;
+import nodomain.freeyourgadget.gadgetbridge.database.DBHandler;
+import nodomain.freeyourgadget.gadgetbridge.database.DBHelper;
 import nodomain.freeyourgadget.gadgetbridge.devices.DeviceCoordinator;
 import nodomain.freeyourgadget.gadgetbridge.externalevents.BluetoothConnectReceiver;
 import nodomain.freeyourgadget.gadgetbridge.impl.GBDevice;
@@ -478,6 +480,13 @@ public class DeviceCommunicationService extends Service implements SharedPrefere
         }
         if (getDeviceStructOrNull(device) == null) {
             createDeviceStruct(device);
+        }
+        // the device is never initialized, which is when other devices are stored, so a newly
+        // discovered device would otherwise vanish from the device list
+        try (DBHandler dbHandler = GBApplication.acquireDB()) {
+            DBHelper.getDevice(device, dbHandler.getDaoSession());
+        } catch (final Exception e) {
+            LOG.error("Failed to store {}", device, e);
         }
         device.setUpdateState(GBDevice.State.WAITING_FOR_SCAN, this);
         // a no-op if the service is already running
