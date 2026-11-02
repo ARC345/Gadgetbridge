@@ -85,11 +85,11 @@ class AicareBroadcastScaleCoordinator : AbstractBLEDeviceCoordinator() {
                 return true
             }
 
-            if (!saveReading(device, reading, now)) {
-                return true
+            if (saveReading(device, reading, now)) {
+                lastSaved[device.address] = SavedReading(reading.counter, reading.weightKg, now)
             }
-            lastSaved[device.address] = SavedReading(reading.counter, reading.weightKg, now)
-            return false
+            // stay in the scan filters, so that a second weigh-in right after this one is not missed
+            return true
         }
         return true
     }
