@@ -520,6 +520,7 @@ import nodomain.freeyourgadget.gadgetbridge.devices.polar.PolarH9DeviceCoordinat
 import nodomain.freeyourgadget.gadgetbridge.devices.bose.NC700Coordinator;
 import nodomain.freeyourgadget.gadgetbridge.devices.bose.QC35Coordinator;
 import nodomain.freeyourgadget.gadgetbridge.devices.qhybrid.QHybridCoordinator;
+import nodomain.freeyourgadget.gadgetbridge.devices.aicare.AicareBroadcastScaleCoordinator;
 import nodomain.freeyourgadget.gadgetbridge.devices.qnscale.QnScaleCoordinator;
 import nodomain.freeyourgadget.gadgetbridge.devices.realme.RealmeBudsAir5ProCoordinator;
 import nodomain.freeyourgadget.gadgetbridge.devices.realme.RealmeBudsAir6ProCoordinator;
@@ -1275,6 +1276,7 @@ public enum DeviceType {
     CARDO_LS24X(Ls24xDeviceCoordinator.class),
     F8SCALE(F8ScaleCoordinator.class),
     EIGHTBITDO_MICRO(EightBitDoMicroCoordinator.class),
+    AICARE_BROADCAST_SCALE(AicareBroadcastScaleCoordinator.class),
     TEST(TestDeviceCoordinator.class);
 
     private DeviceCoordinator coordinator;

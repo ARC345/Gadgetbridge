@@ -24,6 +24,7 @@ import android.bluetooth.le.ScanFilter;
 import android.content.Context;
 import android.net.Uri;
 import android.os.Bundle;
+import android.util.SparseArray;
 
 import androidx.annotation.DrawableRes;
 import androidx.annotation.NonNull;
@@ -193,6 +194,26 @@ public interface DeviceCoordinator {
      * @return boolean
      */
     boolean isConnectable();
+
+    /**
+     * Returns true if this device is not connectable, but sends its data (for example the
+     * readings of a scale) in its advertisements. Gadgetbridge then scans for it in the
+     * background, even when reconnecting by BLE scan is disabled.
+     *
+     * @return boolean
+     */
+    boolean receivesDataFromAdvertisements();
+
+    /**
+     * Handles one scan result of a device for which {@link #receivesDataFromAdvertisements()}
+     * returns true.
+     *
+     * @param device the device the advertisement came from
+     * @param manufacturerData the manufacturer specific data of the advertisement, by manufacturer id
+     * @return true if the scan result was consumed and the device must stay in
+     * {@link GBDevice.State#WAITING_FOR_SCAN}, false to mark the device as scanned
+     */
+    boolean onAdvertisement(@NonNull GBDevice device, @NonNull SparseArray<byte[]> manufacturerData);
 
     /**
      * Checks whether this coordinator handles the given candidate.

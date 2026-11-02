@@ -38,9 +38,11 @@ import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
 import android.os.Build;
 import android.os.Handler;
+import android.os.Bundle;
 import android.os.IBinder;
-import android.os.Parcel;
+import android.util.SparseArray;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.RequiresApi;
 import androidx.core.app.ActivityCompat;
 import androidx.core.app.NotificationCompat;
@@ -98,6 +100,25 @@ public class BLEScanService extends Service {
 
     private ScanningState currentState = ScanningState.NOT_SCANNING;
 
+    /**
+     * The manufacturer specific data of an {@link #EVENT_DEVICE_FOUND} intent, by manufacturer id.
+     */
+    @NonNull
+    public static SparseArray<byte[]> getManufacturerSpecificData(@NonNull final Intent intent) {
+        final SparseArray<byte[]> manufacturerData = new SparseArray<>();
+        final Bundle bundle = intent.getBundleExtra(EXTRA_MANUFACTURER_SPECIFIC_DATA);
+        if (bundle == null) {
+            return manufacturerData;
+        }
+        for (final String key : bundle.keySet()) {
+            final byte[] value = bundle.getByteArray(key);
+            if (value != null) {
+                manufacturerData.put(Integer.parseInt(key), value);
+            }
+        }
+        return manufacturerData;
+    }
+
     private final ScanCallback scanCallback = new ScanCallback() {
         @Override
         public void onScanResult(int callbackType, ScanResult result) {
@@ -110,16 +131,15 @@ public class BLEScanService extends Service {
             intent.putExtra(EXTRA_DEVICE_ADDRESS, device.getAddress());
             intent.putExtra(EXTRA_RSSI, result.getRssi());
 
-            Parcel parcel = Parcel.obtain();
-            try {
-                if (result.getScanRecord() != null) {
-                    parcel.writeSparseArray(result.getScanRecord().getManufacturerSpecificData());
-                    intent.putExtra(EXTRA_MANUFACTURER_SPECIFIC_DATA, parcel.readBundle(getClass().getClassLoader()));
+            if (result.getScanRecord() != null) {
+                final SparseArray<byte[]> manufacturerData = result.getScanRecord().getManufacturerSpecificData();
+                final Bundle bundle = new Bundle();
+                for (int i = 0; i < manufacturerData.size(); i++) {
+                    bundle.putByteArray(String.valueOf(manufacturerData.keyAt(i)), manufacturerData.valueAt(i));
                 }
-                localBroadcastManager.sendBroadcast(intent);
-            } finally {
-                parcel.recycle();
+                intent.putExtra(EXTRA_MANUFACTURER_SPECIFIC_DATA, bundle);
             }
+            localBroadcastManager.sendBroadcast(intent);
 
             // device found, attempt connection
             // stop scanning for device for now

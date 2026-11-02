@@ -30,6 +30,7 @@ import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.util.SparseArray;
 import android.widget.Toast;
 
 import androidx.annotation.DrawableRes;
@@ -166,6 +167,16 @@ public abstract class AbstractDeviceCoordinator implements DeviceCoordinator {
     @Override
     public boolean isConnectable() {
         return true;
+    }
+
+    @Override
+    public boolean receivesDataFromAdvertisements() {
+        return false;
+    }
+
+    @Override
+    public boolean onAdvertisement(@NonNull final GBDevice device, @NonNull final SparseArray<byte[]> manufacturerData) {
+        return false;
     }
 
     @NonNull

@@ -304,6 +304,13 @@ public class DeviceCommunicationService extends Service implements SharedPrefere
                         return;
                     }
 
+                    final DeviceCoordinator coordinator = target.getDeviceCoordinator();
+                    if (coordinator.receivesDataFromAdvertisements() &&
+                            coordinator.onAdvertisement(target, BLEScanService.getManufacturerSpecificData(intent))) {
+                        // keep scanning: marking the device as scanned removes it from the scan filters
+                        return;
+                    }
+
                     Long lastSeenTimestamp = deviceLastScannedTimestamps.get(deviceAddress);
                     deviceLastScannedTimestamps.put(deviceAddress, System.currentTimeMillis());
 
@@ -401,12 +408,21 @@ public class DeviceCommunicationService extends Service implements SharedPrefere
 
         startForeground();
         updateReceiversState();
-        if (reconnectViaScan) {
+        if (reconnectViaScan || hasDevicesWithAdvertisementData()) {
             scanAllDevices();
 
             Intent scanServiceIntent = new Intent(this, BLEScanService.class);
             startService(scanServiceIntent);
         }
+    }
+
+    private boolean hasDevicesWithAdvertisementData() {
+        for (GBDevice device : GBApplication.app().getDeviceManager().getDevices()) {
+            if (device.getDeviceCoordinator().receivesDataFromAdvertisements()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -443,6 +459,10 @@ public class DeviceCommunicationService extends Service implements SharedPrefere
             if (device.getState() != GBDevice.State.NOT_CONNECTED) {
                 continue;
             }
+            if (!reconnectViaScan && !device.getDeviceCoordinator().receivesDataFromAdvertisements()) {
+                // only scanning because of devices that broadcast their data
+                continue;
+            }
             boolean shouldAutoConnect = getPrefs().getAutoReconnect(device);
             if (!shouldAutoConnect) {
                 continue;
@@ -450,6 +470,18 @@ public class DeviceCommunicationService extends Service implements SharedPrefere
             createDeviceStruct(device);
             device.setUpdateState(GBDevice.State.WAITING_FOR_SCAN, this);
         }
+    }
+
+    private void startScanningForAdvertisements(GBDevice device) {
+        if (device.getState() == GBDevice.State.WAITING_FOR_SCAN || device.getState() == GBDevice.State.SCANNED) {
+            return;
+        }
+        if (getDeviceStructOrNull(device) == null) {
+            createDeviceStruct(device);
+        }
+        device.setUpdateState(GBDevice.State.WAITING_FOR_SCAN, this);
+        // a no-op if the service is already running
+        startService(new Intent(this, BLEScanService.class));
     }
 
     private DeviceStruct createDeviceStruct(GBDevice target) {
@@ -500,6 +532,14 @@ public class DeviceCommunicationService extends Service implements SharedPrefere
             final String deviceAddress = gbDevice.getAddress();
 
             LOG.debug("Will attempt to connect to {}", gbDevice);
+
+            if (gbDevice.getDeviceCoordinator().receivesDataFromAdvertisements()) {
+                // there is nothing to connect to, but the data arrives in the advertisements
+                if (fromExtra || prefs.getAutoReconnect(gbDevice)) {
+                    startScanningForAdvertisements(gbDevice);
+                }
+                continue;
+            }
 
             if (!gbDevice.getDeviceCoordinator().isConnectable()) {
                 // we cannot connect to beacons, skip this device
