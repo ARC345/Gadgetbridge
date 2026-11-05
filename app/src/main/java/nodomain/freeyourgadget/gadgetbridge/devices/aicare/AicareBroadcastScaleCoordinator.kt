@@ -18,8 +18,6 @@ package nodomain.freeyourgadget.gadgetbridge.devices.aicare
 
 import android.util.SparseArray
 import android.widget.Toast
-import de.greenrobot.dao.AbstractDao
-import de.greenrobot.dao.Property
 import nodomain.freeyourgadget.gadgetbridge.GBApplication
 import nodomain.freeyourgadget.gadgetbridge.R
 import nodomain.freeyourgadget.gadgetbridge.activities.devicesettings.DeviceSpecificSettings
@@ -146,10 +144,6 @@ class AicareBroadcastScaleCoordinator : AbstractBLEDeviceCoordinator() {
         return true
     }
 
-    override fun getAllDeviceDao(session: DaoSession): MutableMap<AbstractDao<*, *>?, Property?> {
-        return Collections.singletonMap(session.genericWeightSampleDao, GenericWeightSampleDao.Properties.DeviceId)
-    }
-
     override fun getManufacturer(): String {
         // The BLE module and protocol are AICare's; retail units are rebranded by other vendors.
         return "AICare"
@@ -175,8 +169,8 @@ class AicareBroadcastScaleCoordinator : AbstractBLEDeviceCoordinator() {
         return true
     }
 
-    override fun getDeviceSupportClass(device: GBDevice): Class<out DeviceSupport?> {
-        return ScannableDeviceSupport::class.java
+    override fun createDeviceSupport(device: GBDevice): DeviceSupport {
+        return ScannableDeviceSupport()
     }
 
     override fun getDeviceNameResource(): Int {

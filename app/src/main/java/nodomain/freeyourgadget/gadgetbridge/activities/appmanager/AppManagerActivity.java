@@ -53,6 +53,7 @@ import nodomain.freeyourgadget.gadgetbridge.activities.AbstractGBActivity;
 import nodomain.freeyourgadget.gadgetbridge.devices.DeviceCoordinator;
 import nodomain.freeyourgadget.gadgetbridge.activities.install.InstallLauncher;
 import nodomain.freeyourgadget.gadgetbridge.impl.GBDevice;
+import nodomain.freeyourgadget.gadgetbridge.util.BarShade;
 import nodomain.freeyourgadget.gadgetbridge.util.FileUtils;
 import nodomain.freeyourgadget.gadgetbridge.util.GB;
 
@@ -76,6 +77,9 @@ public class AppManagerActivity extends AbstractGBActivity {
         super.onCreate(savedInstanceState);
 
         setContentView(R.layout.activity_fragmentappmanager);
+        if (BarShade.continuesToolbar(this, R.attr.tab_bar_bg)) {
+            setTopShade(findViewById(R.id.appmanager_tab_shade));
+        }
 
         Bundle extras = getIntent().getExtras();
         if (extras != null) {
@@ -91,6 +95,9 @@ public class AppManagerActivity extends AbstractGBActivity {
 
         if (coordinator.supportsCachedAppManagement(mGBDevice)) {
             enabledTabsList.add("cache");
+        }
+        if (coordinator.supportsInstalledAppManagement(mGBDevice) || coordinator.supportsWatchfaceManagement(mGBDevice)) {
+            enabledTabsList.add("updates");
         }
         if (coordinator.supportsInstalledAppManagement(mGBDevice)) {
             enabledTabsList.add("apps");
@@ -122,6 +129,9 @@ public class AppManagerActivity extends AbstractGBActivity {
                 (tab, position) -> {
                     tab.setText(getPageTitle(position));
                 }).attach();
+        if (enabledTabsList.size() <= 1) {
+            findViewById(R.id.appmanager_tab_bar).setVisibility(View.GONE);
+        }
     }
 
     public static synchronized void deleteFromAppOrderFile(String filename, UUID uuid) {
@@ -140,6 +150,7 @@ public class AppManagerActivity extends AbstractGBActivity {
         public Fragment createFragment(int position) {
             return switch (enabledTabsList.get(position)) {
                 case "cache" -> new AppManagerFragmentCache();
+                case "updates" -> new AppManagerFragmentUpdates();
                 case "apps" -> new AppManagerFragmentInstalledApps();
                 case "watchfaces" -> new AppManagerFragmentInstalledWatchfaces();
                 default -> throw new IllegalArgumentException("Unknown tab position " + position);
@@ -155,6 +166,7 @@ public class AppManagerActivity extends AbstractGBActivity {
     public CharSequence getPageTitle(int position) {
         return switch (enabledTabsList.get(position)) {
             case "cache" -> getString(R.string.appmanager_cached_watchapps_watchfaces);
+            case "updates" -> getString(R.string.appmanager_watchapps_watchfaces_updates);
             case "apps" -> getString(R.string.appmanager_installed_watchapps);
             case "watchfaces" -> getString(R.string.appmanager_installed_watchfaces);
             default -> "";

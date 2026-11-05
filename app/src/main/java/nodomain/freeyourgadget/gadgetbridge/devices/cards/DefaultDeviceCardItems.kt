@@ -31,6 +31,7 @@ import nodomain.freeyourgadget.gadgetbridge.activities.HeartRateDialog
 import nodomain.freeyourgadget.gadgetbridge.activities.VibrationActivity
 import nodomain.freeyourgadget.gadgetbridge.activities.charts.ActivityChartsActivity
 import nodomain.freeyourgadget.gadgetbridge.activities.devicesettings.DeviceSettingsActivity
+import nodomain.freeyourgadget.gadgetbridge.activities.gallery.GalleryActivity
 import nodomain.freeyourgadget.gadgetbridge.activities.install.InstallLauncher
 import nodomain.freeyourgadget.gadgetbridge.activities.workouts.WorkoutListActivity
 import nodomain.freeyourgadget.gadgetbridge.devices.DeviceCardAction
@@ -83,6 +84,20 @@ object DefaultDeviceCardItems {
 
         if (coordinator.supportsScreenshots(device)) {
             items.add(ActionCardItem(screenshotAction(), visible = initialized))
+        }
+
+        if (coordinator.supportsGallery(device)) {
+            items.add(
+                ActionCardItem(
+                    DeviceCardAction.forActivity(
+                        R.drawable.ic_photo_library,
+                        R.string.photo_gallery,
+                        GalleryActivity::class.java
+                    ),
+                    id = "gallery",
+                    visible = initialized,
+                )
+            )
         }
 
         if (coordinator.supportsAppsManagement(device)) {
@@ -321,21 +336,32 @@ object DefaultDeviceCardItems {
             return
         }
 
-        GBApplication.deviceService(device).onFindDevice(true, target)
-
         Snackbar.make(
             snackBarAnchor(context),
             R.string.control_center_find_lost_device,
             Snackbar.LENGTH_INDEFINITE
         ).setAction(R.string.find_lost_device_you_found_it) {
             GBApplication.deviceService(device).onFindDevice(false, target)
-        }.addCallback(object : Snackbar.Callback() {
+        }.addCallback(
+            findDeviceSnackbarCallback(
+                onStart = { GBApplication.deviceService(device).onFindDevice(true, target) },
+                onStop = { GBApplication.deviceService(device).onFindDevice(false, target) }
+            )).show()
+    }
+
+    internal fun findDeviceSnackbarCallback(onStart: () -> Unit, onStop: () -> Unit): Snackbar.Callback =
+        object : Snackbar.Callback() {
+            override fun onShown(snackbar: Snackbar) {
+                // A replaced Snackbar must finish stopping its search before this one starts.
+                onStart()
+                super.onShown(snackbar)
+            }
+
             override fun onDismissed(snackbar: Snackbar, event: Int) {
-                GBApplication.deviceService(device).onFindDevice(false, target)
+                onStop()
                 super.onDismissed(snackbar, event)
             }
-        }).show()
-    }
+        }
 
     private fun heartRateTestOnClick(device: GBDevice, context: Context) {
         GBApplication.deviceService(device).onHeartRateTest()

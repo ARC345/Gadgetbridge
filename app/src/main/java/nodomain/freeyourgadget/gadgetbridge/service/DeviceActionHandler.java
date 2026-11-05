@@ -71,6 +71,10 @@ public class DeviceActionHandler {
             case ACTION_NOTIFICATION: {
                 final NotificationSpec notificationSpec = intentCopy.getParcelableExtra(EXTRA_NOTIFICATION_SPEC);
                 if (notificationSpec != null) {
+                if (notificationSpec.getType() == NotificationType.GENERIC_SMS && notificationSpec.getPhoneNumber() != null) {
+                    GBApplication.getIDSenderLookup().add(notificationSpec.getId(), notificationSpec.getPhoneNumber());
+                }
+
                 //TODO: check if at least one of the attached actions is a reply action instead?
                 if ((notificationSpec.getAttachedActions() != null && !notificationSpec.getAttachedActions().isEmpty())
                         || (notificationSpec.getType() == NotificationType.GENERIC_SMS && notificationSpec.getPhoneNumber() != null)) {
@@ -338,6 +342,16 @@ public class DeviceActionHandler {
             case ACTION_POWER_OFF:
                 deviceSupport.onPowerOff();
                 break;
+            case ACTION_SEND_WATCH_APP_MESSAGE: {
+                final String appId = intentCopy.getStringExtra(EXTRA_WATCH_APP_ID);
+                final byte[] payload = intentCopy.getByteArrayExtra(EXTRA_WATCH_APP_PAYLOAD);
+                if (appId == null || payload == null) {
+                    LOG.warn("Watch app message without app id or payload");
+                    break;
+                }
+                deviceSupport.onSendWatchAppMessage(appId, payload);
+                break;
+            }
             case ACTION_SET_FM_FREQUENCY:
                 final float frequency = intentCopy.getFloatExtra(EXTRA_FM_FREQUENCY, -1);
                 if (frequency != -1) {

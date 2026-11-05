@@ -17,7 +17,6 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>. */
 package nodomain.freeyourgadget.gadgetbridge.activities.charts;
 
-import android.app.Activity;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.view.LayoutInflater;
@@ -56,15 +55,12 @@ import nodomain.freeyourgadget.gadgetbridge.activities.workouts.StatTileGridUtil
 import nodomain.freeyourgadget.gadgetbridge.database.DBHandler;
 import nodomain.freeyourgadget.gadgetbridge.databinding.FragmentWeeksleepChartBinding;
 import nodomain.freeyourgadget.gadgetbridge.impl.GBDevice;
-import nodomain.freeyourgadget.gadgetbridge.model.ActivityAmount;
-import nodomain.freeyourgadget.gadgetbridge.model.ActivityAmounts;
-import nodomain.freeyourgadget.gadgetbridge.model.ActivityKind;
-import nodomain.freeyourgadget.gadgetbridge.model.ActivitySample;
 import nodomain.freeyourgadget.gadgetbridge.model.ActivityUser;
 import nodomain.freeyourgadget.gadgetbridge.model.SleepScoreSample;
+import nodomain.freeyourgadget.gadgetbridge.model.SleepSession;
 import nodomain.freeyourgadget.gadgetbridge.util.Accumulator;
 import nodomain.freeyourgadget.gadgetbridge.util.DateTimeUtils;
-import nodomain.freeyourgadget.gadgetbridge.util.LimitedQueue;
+import nodomain.freeyourgadget.gadgetbridge.util.SleepRangeUtils;
 
 public class SleepPeriodFragment extends SleepFragment<SleepPeriodFragment.MyChartsData> {
     protected static final Logger LOG = LoggerFactory.getLogger(SleepPeriodFragment.class);
@@ -73,8 +69,6 @@ public class SleepPeriodFragment extends SleepFragment<SleepPeriodFragment.MyCha
 
     private FragmentWeeksleepChartBinding binding;
     protected int mTargetValue = 0;
-
-    private final int mCutOffHour = GBApplication.getPrefs().getString("chart_sleep_range_mode", "18:00").equals("18:00") ? 18 : 12;
 
     protected boolean SHOW_BALANCE;
 
@@ -92,33 +86,28 @@ public class SleepPeriodFragment extends SleepFragment<SleepPeriodFragment.MyCha
         TOTAL_DAYS = getArguments() != null ? getArguments().getInt("totalDays") : 0;
     }
 
-    private MySleepWeeklyData getMySleepWeeklyData(DBHandler db, Calendar day, GBDevice device) {
-        day = (Calendar) day.clone(); // do not modify the caller's argument
-        day.add(Calendar.DATE, -TOTAL_DAYS + 1);
+    private MySleepWeeklyData getMySleepWeeklyData(final GBDevice device, final List<List<SleepSession>> sessionsByDay, final boolean showRemSleep, final boolean showAwakeSleep) {
         int totalDaysForAverage = 0;
         long awakeWeeklyTotal = 0;
         long remWeeklyTotal = 0;
         long deepWeeklyTotal = 0;
         long lightWeeklyTotal = 0;
 
-        for (int counter = 0; counter < TOTAL_DAYS; counter++) {
-            ActivityAmounts amounts = getActivityAmountsForDay(db, day, device);
-            if (calculateBalance(amounts) > 0) {
+        for (List<SleepSession> daySessions : sessionsByDay) {
+            if (calculateBalance(daySessions) > 0) {
                 totalDaysForAverage++;
             }
 
-            final List<Float> totalAmounts = getTotalsForActivityAmounts(amounts);
+            final List<Float> totalAmounts = getTotalsForSessions(daySessions, showRemSleep, showAwakeSleep);
             int i = 0;
             deepWeeklyTotal += totalAmounts.get(i++).longValue();
             lightWeeklyTotal += totalAmounts.get(i++).longValue();
-            if (supportsRemSleep(device)) {
+            if (showRemSleep) {
                 remWeeklyTotal += totalAmounts.get(i++).longValue();
             }
-            if (supportsAwakeSleep(device)) {
+            if (showAwakeSleep) {
                 awakeWeeklyTotal += totalAmounts.get(i++).longValue();
             }
-
-            day.add(Calendar.DATE, 1);
         }
 
         return new MySleepWeeklyData(
@@ -127,6 +116,36 @@ public class SleepPeriodFragment extends SleepFragment<SleepPeriodFragment.MyCha
                 deepWeeklyTotal,
                 lightWeeklyTotal,
                 totalDaysForAverage);
+    }
+
+    private List<List<SleepSession>> getSleepSessionsByDay(final DBHandler db,
+                                                           final Calendar day,
+                                                           final GBDevice device) {
+        final Calendar firstDay = (Calendar) day.clone();
+        firstDay.add(Calendar.DATE, -TOTAL_DAYS + 1);
+
+        final int[] firstRange = SleepRangeUtils.getSleepRange(firstDay);
+        final int[] lastRange = SleepRangeUtils.getSleepRange(day);
+
+        final List<SleepSession> allSessions = device.getDeviceCoordinator()
+                .getSleepSessionProvider(device, db.getDaoSession())
+                .getSleepSessionsEndingIn(firstRange[0], lastRange[1]);
+
+        final List<List<SleepSession>> result = new ArrayList<>(TOTAL_DAYS);
+        final Calendar cursor = (Calendar) firstDay.clone();
+        for (int counter = 0; counter < TOTAL_DAYS; counter++) {
+            final int[] range = SleepRangeUtils.getSleepRange(cursor);
+            final List<SleepSession> daySessions = new ArrayList<>();
+            for (SleepSession session : allSessions) {
+                final long endSeconds = session.getEndTime() / 1000L;
+                if (endSeconds > range[0] && endSeconds <= range[1]) {
+                    daySessions.add(session);
+                }
+            }
+            result.add(daySessions);
+            cursor.add(Calendar.DATE, 1);
+        }
+        return result;
     }
 
     @Override
@@ -169,7 +188,9 @@ public class SleepPeriodFragment extends SleepFragment<SleepPeriodFragment.MyCha
     @Override
     protected void updateChartsnUIThread(MyChartsData mcd) {
         final WeekChartsData weekBeforeData = mcd.getWeekBeforeData();
-        updateWeekChart(weekBeforeData);
+        final boolean showRemSleep = mcd.isShowRemSleep();
+        final boolean showAwakeSleep = mcd.isShowAwakeSleep();
+        updateWeekChart(weekBeforeData, showRemSleep, showAwakeSleep);
 
         if (supportsSleepScore()) {
             updateSleepScoreChart(weekBeforeData);
@@ -192,12 +213,12 @@ public class SleepPeriodFragment extends SleepFragment<SleepPeriodFragment.MyCha
             float avgLight = Math.abs(sleepWeeklyData.getTotalLight() / totalDaysForAverage);
             legendStats.add(buildSleepStageTile(R.color.chart_light_sleep_dark, R.string.sleep_colored_stats_light_avg,
                     DateTimeUtils.formatDurationHoursMinutes((int) avgLight, TimeUnit.MINUTES)));
-            if (supportsRemSleep(getChartsHost().getDevice())) {
+            if (showRemSleep) {
                 float avgRem = Math.abs(sleepWeeklyData.getTotalRem() / totalDaysForAverage);
                 legendStats.add(buildSleepStageTile(R.color.chart_rem_sleep_dark, R.string.sleep_colored_stats_rem_avg,
                         DateTimeUtils.formatDurationHoursMinutes((int) avgRem, TimeUnit.MINUTES)));
             }
-            if (supportsAwakeSleep(getChartsHost().getDevice())) {
+            if (showAwakeSleep) {
                 float avgAwake = Math.abs(sleepWeeklyData.getTotalAwake() / totalDaysForAverage);
                 legendStats.add(buildSleepStageTile(R.color.chart_awake_sleep_dark, R.string.sleep_colored_stats_awake_avg,
                         DateTimeUtils.formatDurationHoursMinutes((int) avgAwake, TimeUnit.MINUTES)));
@@ -205,10 +226,10 @@ public class SleepPeriodFragment extends SleepFragment<SleepPeriodFragment.MyCha
         } else {
             legendStats.add(buildSleepStageTile(R.color.chart_deep_sleep_dark, R.string.sleep_colored_stats_deep_avg, "-"));
             legendStats.add(buildSleepStageTile(R.color.chart_light_sleep_dark, R.string.sleep_colored_stats_light_avg, "-"));
-            if (supportsRemSleep(getChartsHost().getDevice())) {
+            if (showRemSleep) {
                 legendStats.add(buildSleepStageTile(R.color.chart_rem_sleep_dark, R.string.sleep_colored_stats_rem_avg, "-"));
             }
-            if (supportsAwakeSleep(getChartsHost().getDevice())) {
+            if (showAwakeSleep) {
                 legendStats.add(buildSleepStageTile(R.color.chart_awake_sleep_dark, R.string.sleep_colored_stats_awake_avg, "-"));
             }
         }
@@ -225,13 +246,38 @@ public class SleepPeriodFragment extends SleepFragment<SleepPeriodFragment.MyCha
         Calendar day = Calendar.getInstance();
         day.setTime(chartsHost.getEndDate());
         //NB: we could have omitted the day, but this way we can move things to the past easily
-        WeekChartsData weekBeforeData = refreshWeekBeforeData(db, day, device);
-        MySleepWeeklyData sleepWeeklyData = getMySleepWeeklyData(db, day, device);
+        List<List<SleepSession>> sessionsByDay = getSleepSessionsByDay(db, day, device);
+        final boolean showRemSleep = supportsRemSleep(device) || hasRemSleep(sessionsByDay);
+        final boolean showAwakeSleep = supportsAwakeSleep(device) || hasAwakeSleep(sessionsByDay);
+        WeekChartsData weekBeforeData = refreshWeekBeforeData(db, day, device, sessionsByDay, showRemSleep, showAwakeSleep);
+        MySleepWeeklyData sleepWeeklyData = getMySleepWeeklyData(device, sessionsByDay, showRemSleep, showAwakeSleep);
 
-        return new MyChartsData(weekBeforeData, sleepWeeklyData);
+        return new MyChartsData(weekBeforeData, sleepWeeklyData, showRemSleep, showAwakeSleep);
     }
 
-    protected WeekChartsData refreshWeekBeforeData(DBHandler db, Calendar day, GBDevice device) {
+    private static boolean hasRemSleep(final List<List<SleepSession>> sessionsByDay) {
+        for (final List<SleepSession> daySessions : sessionsByDay) {
+            for (final SleepSession session : daySessions) {
+                if (session.getRemSleepDuration() > 0) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean hasAwakeSleep(final List<List<SleepSession>> sessionsByDay) {
+        for (final List<SleepSession> daySessions : sessionsByDay) {
+            for (final SleepSession session : daySessions) {
+                if (session.getAwakeSleepDuration() > 0) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    protected WeekChartsData refreshWeekBeforeData(DBHandler db, Calendar day, GBDevice device, List<List<SleepSession>> sessionsByDay, final boolean showRemSleep, final boolean showAwakeSleep) {
         day = (Calendar) day.clone(); // do not modify the caller's argument
         day.add(Calendar.DATE, -TOTAL_DAYS + 1);
 
@@ -244,13 +290,13 @@ public class SleepPeriodFragment extends SleepFragment<SleepPeriodFragment.MyCha
         final Accumulator sleepScoreAccumulator = new Accumulator();
         for (int counter = 0; counter < TOTAL_DAYS; counter++) {
             // Sleep stages
-            ActivityAmounts amounts = getActivityAmountsForDay(db, day, device);
-            daily_balance = calculateBalance(amounts);
+            List<SleepSession> daySessions = sessionsByDay.get(counter);
+            daily_balance = calculateBalance(daySessions);
             if (daily_balance > 0) {
                 totalDaysForAverage++;
             }
             balance += daily_balance;
-            stageMinutes.add(getTotalsForActivityAmounts(amounts));
+            stageMinutes.add(getTotalsForSessions(daySessions, showRemSleep, showAwakeSleep));
             epochDays[counter] = LocalDate.of(day.get(Calendar.YEAR), day.get(Calendar.MONTH) + 1, day.get(Calendar.DAY_OF_MONTH)).toEpochDay();
             // Sleep score
             if (supportsSleepScore()) {
@@ -287,9 +333,9 @@ public class SleepPeriodFragment extends SleepFragment<SleepPeriodFragment.MyCha
         );
     }
 
-    private void updateWeekChart(final WeekChartsData data) {
-        final String[] labels = getStageLabels();
-        final int[] colors = getColors();
+    private void updateWeekChart(final WeekChartsData data, final boolean showRemSleep, final boolean showAwakeSleep) {
+        final String[] labels = getStageLabels(showRemSleep, showAwakeSleep);
+        final int[] colors = getColors(showRemSleep, showAwakeSleep);
         final int averageColor = data.getAverage() > mTargetValue ? Color.GREEN : Color.RED;
         final boolean showAverage = GBApplication.getPrefs().getBoolean("charts_show_average", true);
         final int targetColor = getResources().getColor(R.color.chart_deep_sleep_dark);
@@ -299,11 +345,17 @@ public class SleepPeriodFragment extends SleepFragment<SleepPeriodFragment.MyCha
         );
 
         // The last stage is awake time, which does not count towards the total sleep time
-        final int sleepStages = supportsAwakeSleep(getChartsHost().getDevice()) ? labels.length - 1 : labels.length;
+        final int sleepStages = showAwakeSleep ? labels.length - 1 : labels.length;
         final String emptyValue = getString(R.string.stats_empty_value);
         final List<String> rowLabels = new ArrayList<>();
         final List<Integer> rowColors = new ArrayList<>();
         final List<Function1<Integer, String>> rowTexts = new ArrayList<>();
+        for (int stage = 0; stage < labels.length; stage++) {
+            final int index = stage;
+            rowLabels.add(labels[stage]);
+            rowColors.add(colors[stage]);
+            rowTexts.add(i -> data.stageMinutes[index][i] > 0 ? getHM((long) data.stageMinutes[index][i]) : emptyValue);
+        }
         rowLabels.add("");
         rowColors.add(null);
         rowTexts.add(i -> {
@@ -311,14 +363,8 @@ public class SleepPeriodFragment extends SleepFragment<SleepPeriodFragment.MyCha
             for (int stage = 0; stage < sleepStages; stage++) {
                 total += data.stageMinutes[stage][i];
             }
-            return total > 0 ? getString(R.string.sleep_total_value, getHM((long) total)) : emptyValue;
+            return total > 0 ? getHM((long) total) : emptyValue;
         });
-        for (int stage = 0; stage < labels.length; stage++) {
-            final int index = stage;
-            rowLabels.add(labels[stage]);
-            rowColors.add(colors[stage]);
-            rowTexts.add(i -> data.stageMinutes[index][i] > 0 ? getHM((long) data.stageMinutes[index][i]) : emptyValue);
-        }
         binding.weekSleepChart.setSelectionContent(x -> DaySelections.of(
                 data.epochDays, x, rowLabels, rowColors, rowTexts, emptyValue
         ));
@@ -339,15 +385,15 @@ public class SleepPeriodFragment extends SleepFragment<SleepPeriodFragment.MyCha
         binding.weekSleepChartLegend.setSeries(legend);
     }
 
-    private String[] getStageLabels() {
+    private String[] getStageLabels(final boolean showRemSleep, final boolean showAwakeSleep) {
         String[] labels = {
                 getString(R.string.sleep_colored_stats_deep),
                 getString(R.string.sleep_colored_stats_light)
         };
-        if (supportsRemSleep(getChartsHost().getDevice())) {
+        if (showRemSleep) {
             labels = ArrayUtils.add(labels, getString(R.string.sleep_colored_stats_rem));
         }
-        if (supportsAwakeSleep(getChartsHost().getDevice())) {
+        if (showAwakeSleep) {
             labels = ArrayUtils.add(labels, getString(R.string.abstract_chart_fragment_kind_awake_sleep));
         }
         return labels;
@@ -373,7 +419,7 @@ public class SleepPeriodFragment extends SleepFragment<SleepPeriodFragment.MyCha
 
     @Override
     public String getTitle() {
-        if (GBApplication.getPrefs().getBoolean("charts_range", true)) {
+        if (GBApplication.getPrefs().getChartsRange() == ChartsRange.MONTH) {
             return getString(R.string.weeksleepchart_sleep_a_month);
         } else {
             return getString(R.string.weeksleepchart_sleep_a_week);
@@ -388,20 +434,11 @@ public class SleepPeriodFragment extends SleepFragment<SleepPeriodFragment.MyCha
         return GBApplication.getPrefs().getInt(ActivityUser.PREF_USER_SLEEP_DURATION_MINUTES, ActivityUser.defaultUserSleepDurationGoal);
     }
 
-    int getOffsetHours() {
-        return GBApplication.getPrefs().getString("chart_sleep_range_mode", "18:00").equals("18:00") ? -18 : -12;
-    }
-
-
-    protected long calculateBalance(ActivityAmounts activityAmounts) {
+    protected long calculateBalance(List<SleepSession> sessions) {
         long balance = 0;
 
-        for (ActivityAmount amount : activityAmounts.getAmounts()) {
-            if (amount.getActivityKind() == ActivityKind.DEEP_SLEEP ||
-                    amount.getActivityKind() == ActivityKind.LIGHT_SLEEP ||
-                    amount.getActivityKind() == ActivityKind.REM_SLEEP) {
-                balance += amount.getTotalSeconds();
-            }
+        for (SleepSession session : sessions) {
+            balance += session.getDeepSleepDuration() + session.getLightSleepDuration() + session.getRemSleepDuration();
         }
         return (int) (balance / 60);
     }
@@ -417,21 +454,16 @@ public class SleepPeriodFragment extends SleepFragment<SleepPeriodFragment.MyCha
             return getString(R.string.no_data);
     }
 
-    List<Float> getTotalsForActivityAmounts(ActivityAmounts activityAmounts) {
+    List<Float> getTotalsForSessions(List<SleepSession> sessions, final boolean showRemSleep, final boolean showAwakeSleep) {
         long totalSecondsDeepSleep = 0;
         long totalSecondsLightSleep = 0;
         long totalSecondsRemSleep = 0;
         long totalSecondsAwakeSleep = 0;
-        for (ActivityAmount amount : activityAmounts.getAmounts()) {
-            if (amount.getActivityKind() == ActivityKind.DEEP_SLEEP) {
-                totalSecondsDeepSleep += amount.getTotalSeconds();
-            } else if (amount.getActivityKind() == ActivityKind.LIGHT_SLEEP) {
-                totalSecondsLightSleep += amount.getTotalSeconds();
-            } else if (amount.getActivityKind() == ActivityKind.REM_SLEEP) {
-                totalSecondsRemSleep += amount.getTotalSeconds();
-            } else if (amount.getActivityKind() == ActivityKind.AWAKE_SLEEP) {
-                totalSecondsAwakeSleep += amount.getTotalSeconds();
-            }
+        for (SleepSession session : sessions) {
+            totalSecondsDeepSleep += session.getDeepSleepDuration();
+            totalSecondsLightSleep += session.getLightSleepDuration();
+            totalSecondsRemSleep += session.getRemSleepDuration();
+            totalSecondsAwakeSleep += session.getAwakeSleepDuration();
         }
         int totalMinutesDeepSleep = (int) (totalSecondsDeepSleep / 60);
         int totalMinutesLightSleep = (int) (totalSecondsLightSleep / 60);
@@ -441,10 +473,10 @@ public class SleepPeriodFragment extends SleepFragment<SleepPeriodFragment.MyCha
         final List<Float> activityAmountsTotals = new ArrayList<>(4);
         activityAmountsTotals.add((float) totalMinutesDeepSleep);
         activityAmountsTotals.add((float) totalMinutesLightSleep);
-        if (supportsRemSleep(getChartsHost().getDevice())) {
+        if (showRemSleep) {
             activityAmountsTotals.add((float) totalMinutesRemSleep);
         }
-        if (supportsAwakeSleep(getChartsHost().getDevice())) {
+        if (showAwakeSleep) {
             activityAmountsTotals.add((float) totalMinutesAwakeSleep);
         }
 
@@ -478,12 +510,12 @@ public class SleepPeriodFragment extends SleepFragment<SleepPeriodFragment.MyCha
         };
     }
 
-    int[] getColors() {
+    int[] getColors(final boolean showRemSleep, final boolean showAwakeSleep) {
         int[] colors = {akDeepSleep.color, akLightSleep.color};
-        if (supportsRemSleep(getChartsHost().getDevice())) {
+        if (showRemSleep) {
             colors = ArrayUtils.add(colors, akRemSleep.color);
         }
-        if (supportsAwakeSleep(getChartsHost().getDevice())) {
+        if (showAwakeSleep) {
             colors = ArrayUtils.add(colors, akAwakeSleep.color);
         }
         return colors;
@@ -508,10 +540,14 @@ public class SleepPeriodFragment extends SleepFragment<SleepPeriodFragment.MyCha
     protected static class MyChartsData extends ChartsData {
         private final WeekChartsData weekBeforeData;
         private final MySleepWeeklyData sleepWeeklyData;
+        private final boolean showRemSleep;
+        private final boolean showAwakeSleep;
 
-        MyChartsData(WeekChartsData weekBeforeData, MySleepWeeklyData sleepWeeklyData) {
+        MyChartsData(WeekChartsData weekBeforeData, MySleepWeeklyData sleepWeeklyData, final boolean showRemSleep, final boolean showAwakeSleep) {
             this.weekBeforeData = weekBeforeData;
             this.sleepWeeklyData = sleepWeeklyData;
+            this.showRemSleep = showRemSleep;
+            this.showAwakeSleep = showAwakeSleep;
         }
 
         WeekChartsData getWeekBeforeData() {
@@ -521,55 +557,18 @@ public class SleepPeriodFragment extends SleepFragment<SleepPeriodFragment.MyCha
         MySleepWeeklyData getSleepWeeklyData() {
             return sleepWeeklyData;
         }
-    }
 
-    protected ActivityAmounts getActivityAmountsForDay(DBHandler db, Calendar day, GBDevice device) {
-
-        LimitedQueue<Integer, ActivityAmounts> activityAmountCache = null;
-        ActivityAmounts amounts = null;
-
-        Activity activity = getActivity();
-        int key = (int) (day.getTimeInMillis() / 1000) + (-mCutOffHour * 3600);
-        if (activity != null) {
-            activityAmountCache = ((ActivityChartsActivity) activity).mActivityAmountCache;
-            amounts = activityAmountCache.lookup(key);
+        boolean isShowRemSleep() {
+            return showRemSleep;
         }
 
-        if (amounts == null) {
-            ActivityAnalysis analysis = new ActivityAnalysis();
-            amounts = analysis.calculateActivityAmounts(getSamplesOfDay(db, day, mCutOffHour, device));
-            if (activityAmountCache != null) {
-                activityAmountCache.add(key, amounts);
-            }
+        boolean isShowAwakeSleep() {
+            return showAwakeSleep;
         }
-
-        return amounts;
-    }
-
-    private List<? extends ActivitySample> getSamplesOfDay(DBHandler db, Calendar day, int cutoffHour, GBDevice device) {
-        day = (Calendar) day.clone(); // do not modify the caller's argument
-
-        day.set(Calendar.HOUR_OF_DAY, cutoffHour);
-        day.set(Calendar.MINUTE, 0);
-        day.set(Calendar.SECOND, 0);
-        final int tsEnd = toTimestamp(day.getTime());
-
-        int tsStart = tsEnd - 24 * 60 * 60;
-        day.setTimeInMillis(tsStart * 1000L);
-        day.set(Calendar.HOUR_OF_DAY, cutoffHour);
-        day.set(Calendar.MINUTE, 0);
-        day.set(Calendar.SECOND, 0);
-        tsStart = toTimestamp(day.getTime());
-
-        return getSamples(db, device, tsStart, tsEnd);
     }
 
     private int getRangeDays() {
-        if (GBApplication.getPrefs().getBoolean("charts_range", true)) {
-            return 30;
-        } else {
-            return 7;
-        }
+        return GBApplication.getPrefs().getChartsRange().getDays();
     }
 
     protected static class WeekChartsData {

@@ -27,6 +27,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.util.Calendar
+import java.util.Date
 import java.util.GregorianCalendar
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -108,6 +109,9 @@ open class DefaultChartsProvider : DeviceChartsProvider {
         if (coordinator.supportsWeightMeasurement(device)) {
             supportedCharts.add("weight")
         }
+        if (coordinator.supportsPointAltitudeMeasurement(device)) {
+            supportedCharts.add("altitude")
+        }
         if (coordinator.supportsActiveCalories(device)) {
             supportedCharts.add("calories")
         }
@@ -166,6 +170,7 @@ open class DefaultChartsProvider : DeviceChartsProvider {
             "bloodpressure" -> context.getString(R.string.blood_pressure)
             "cycling" -> context.getString(R.string.title_cycling)
             "weight" -> context.getString(R.string.menuitem_weight)
+            "altitude" -> context.getString(R.string.menuitem_altitude)
             "calories" -> context.getString(R.string.calories)
             "hydration" -> context.getString(R.string.pref_header_hydration)
             "respiratoryrate" -> context.getString(R.string.respiratoryrate)
@@ -207,6 +212,7 @@ open class DefaultChartsProvider : DeviceChartsProvider {
             "bloodpressure" -> BloodPressureCollectionFragment.newInstance(allowSwipe)
             "cycling" -> CyclingChartFragment()
             "weight" -> WeightChartFragment()
+            "altitude" -> AltitudeChartFragment()
             "calories" -> CaloriesCollectionFragment.newInstance(allowSwipe)
             "hydration" -> HydrationCollectionFragment.newInstance(allowSwipe)
             "respiratoryrate" -> RespiratoryRateCollectionFragment.newInstance(allowSwipe)
@@ -234,6 +240,7 @@ open class DefaultChartsProvider : DeviceChartsProvider {
             "bloodpressure" -> R.drawable.ic_pressure
             "cycling" -> R.drawable.ic_directions_bike
             "weight" -> R.drawable.ic_weight
+            "altitude" -> R.drawable.ic_altitude_24px
             "calories" -> R.drawable.ic_calories
             "hydration" -> R.drawable.ic_drink
             "respiratoryrate" -> R.drawable.ic_activity_meditation
@@ -251,11 +258,13 @@ open class DefaultChartsProvider : DeviceChartsProvider {
         db: DBHandler,
         device: GBDevice,
         chartName: String,
-        tsStart: Int,
-        tsEnd: Int,
+        timestamp: Int,
     ): String? {
         val coordinator = device.deviceCoordinator
         val session = db.daoSession
+        val date = Date(timestamp * 1000L)
+        val tsStart = (DateTimeUtils.dayStart(date).time / 1000L).toInt()
+        val tsEnd = (DateTimeUtils.dayEnd(date).time / 1000L).toInt()
         val start = tsStart * 1000L
         val end = tsEnd * 1000L
 
@@ -268,7 +277,7 @@ open class DefaultChartsProvider : DeviceChartsProvider {
 
             // Sleep - score (if available), followed by sleep time
             "sleep" -> {
-                val minutes = DailyTotals.getDailyTotalsForDevice(device, calendarOf(tsEnd), db).sleep
+                val minutes = DailyTotals.getDailyTotalsForDevice(device, calendarOf(timestamp), db).sleep
                 val score = if (coordinator.supportsSleepScore(device)) {
                     coordinator.getSleepScoreProvider(device, db.daoSession)
                         ?.getAllSamples(start, end)
@@ -403,6 +412,11 @@ open class DefaultChartsProvider : DeviceChartsProvider {
                 ?.takeIf { it > 0 }
                 ?.let { WeightUnit.formatWeight(context, it.toDouble(), GBApplication.getPrefs().weightUnit) }
 
+            // Altitude - latest value until the end of the time range
+            "altitude" -> coordinator.getAltitudeSampleProvider(device, session)
+                ?.getLatestSample(end)
+                ?.let { context.getString(R.string.altitude_value_format, it.altitude) }
+
             // Hydration - daily total for the time range
             "hydration" -> {
                 val date = LocalDate.ofInstant(Instant.ofEpochSecond(tsEnd.toLong()), ZoneId.systemDefault())
@@ -444,6 +458,7 @@ open class DefaultChartsProvider : DeviceChartsProvider {
                         db, device, MetricSample.Metric.GENERIC_TRAINING_LOAD_ACUTE, end
                     )?.metricScore?.roundToInt()
                 } else {
+                    @Suppress("DEPRECATION")
                     coordinator.getTrainingAcuteLoadSampleProvider(device, session)
                         ?.getLatestSample(end)
                         ?.value

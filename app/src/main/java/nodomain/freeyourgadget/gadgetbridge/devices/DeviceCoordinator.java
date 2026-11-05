@@ -49,6 +49,7 @@ import nodomain.freeyourgadget.gadgetbridge.capabilities.loyaltycards.BarcodeFor
 import nodomain.freeyourgadget.gadgetbridge.capabilities.password.PasswordCapabilityImpl;
 import nodomain.freeyourgadget.gadgetbridge.capabilities.widgets.WidgetManager;
 import nodomain.freeyourgadget.gadgetbridge.devices.cards.DeviceCardItem;
+import nodomain.freeyourgadget.gadgetbridge.devices.cards.QuickControl;
 import nodomain.freeyourgadget.gadgetbridge.entities.BaseActivitySummary;
 import nodomain.freeyourgadget.gadgetbridge.entities.CyclingSample;
 import nodomain.freeyourgadget.gadgetbridge.entities.DaoSession;
@@ -63,6 +64,7 @@ import nodomain.freeyourgadget.gadgetbridge.model.ActivitySample;
 import nodomain.freeyourgadget.gadgetbridge.model.ActivitySummaryParser;
 import nodomain.freeyourgadget.gadgetbridge.model.ActivityTrackProvider;
 import nodomain.freeyourgadget.gadgetbridge.model.Alarm;
+import nodomain.freeyourgadget.gadgetbridge.model.AltitudeSample;
 import nodomain.freeyourgadget.gadgetbridge.model.BatteryConfig;
 import nodomain.freeyourgadget.gadgetbridge.model.BloodPressureSample;
 import nodomain.freeyourgadget.gadgetbridge.model.BodyEnergySample;
@@ -86,6 +88,7 @@ import nodomain.freeyourgadget.gadgetbridge.model.WorkoutLoadSample;
 import nodomain.freeyourgadget.gadgetbridge.model.heartratezones.HeartRateZonesSpec;
 import nodomain.freeyourgadget.gadgetbridge.service.DeviceSupport;
 import nodomain.freeyourgadget.gadgetbridge.service.ServiceDeviceSupport;
+import nodomain.freeyourgadget.gadgetbridge.vendorimport.VendorDataImporter;
 import nodomain.freeyourgadget.gadgetbridge.widgets.DeviceWidgetsProvider;
 
 /**
@@ -178,6 +181,7 @@ public interface DeviceCoordinator {
         VACUUM,
         GAMEPAD,
         GYM_EQUIPMENT,
+        PULSE_OXIMETER,
     }
 
     /**
@@ -256,16 +260,25 @@ public interface DeviceCoordinator {
      * given device.
      * @throws GBException
      */
-    void deleteDevice(@NonNull final GBDevice device, boolean deleteFiles) throws GBException;
+    void deleteDevice(@NonNull final GBDevice device,
+                      boolean deleteFiles,
+                      @Nullable final DeviceDeletionProgress progress) throws GBException;
 
     /**
      * Returns the Activity class to be started in order to perform a pairing of a
      * given device after its discovery.
      *
-     * @return the activity class for pairing/initial authentication, or null if none
+     * @return the activity class for pairing/initial authentication, or null for the default pairing activity
      */
     @Nullable
     Class<? extends Activity> getPairingActivity();
+
+    /**
+     * Returns a text that the default pairing activity displays during the pairing, for example a PIN or an
+     * action to do on the device.
+     */
+    @Nullable
+    CharSequence getPairingHint(Context context, GBDeviceCandidate candidate);
 
     @Nullable
     Class<? extends Activity> getCalibrationActivity();
@@ -447,6 +460,12 @@ public interface DeviceCoordinator {
     boolean supportsWeightMeasurement(@NonNull final GBDevice device);
 
     /**
+     * Returns true if altitude measurement and fetching is supported by the device
+     * (with this coordinator).
+     */
+    boolean supportsPointAltitudeMeasurement(@NonNull final GBDevice device);
+
+    /**
      * Returns true if storing hydration entries is supported for the device.
      */
     boolean supportsHydration(@NonNull final GBDevice device);
@@ -597,6 +616,12 @@ public interface DeviceCoordinator {
     TimeSampleProvider<? extends WeightSample> getWeightSampleProvider(@NonNull final GBDevice device, @NonNull final DaoSession session);
 
     /**
+     * Returns the sample provider for altitude data, for the device being supported.
+     */
+    @Nullable
+    TimeSampleProvider<? extends AltitudeSample> getAltitudeSampleProvider(@NonNull final GBDevice device, @NonNull final DaoSession session);
+
+    /**
      * Returns the sample provider for hydration data, for the device being supported.
      */
     @Nullable
@@ -609,6 +634,13 @@ public interface DeviceCoordinator {
 
     @Nullable
     TimeSampleProvider<? extends SleepScoreSample> getSleepScoreProvider(@NonNull final GBDevice device, @NonNull final DaoSession session);
+
+    /**
+     * Returns the {@link SleepSessionProvider} for the device being supported. A device that records
+     * sleep sessions natively can override this to supply them directly.
+     */
+    @NonNull
+    SleepSessionProvider getSleepSessionProvider(@NonNull final GBDevice device, @NonNull final DaoSession session);
 
     /**
      * Returns the sample provider for blood pressure data, for the device being supported.
@@ -784,6 +816,11 @@ public interface DeviceCoordinator {
      */
     boolean supportsAppsManagement(@NonNull final GBDevice device);
 
+    /**
+     * Returns true if the phone can send messages to apps installed on this device.
+     */
+    boolean supportsWatchAppMessages(@NonNull final GBDevice device);
+
     boolean supportsCachedAppManagement(@NonNull final GBDevice device);
     boolean supportsInstalledAppManagement(@NonNull final GBDevice device);
     boolean supportsWatchfaceManagement(@NonNull final GBDevice device);
@@ -826,6 +863,12 @@ public interface DeviceCoordinator {
      * Returns the dedicated writable export directory for this device.
      */
     File getWritableExportDirectory(@NonNull final GBDevice device, boolean createIfRequired) throws IOException;
+
+    /**
+     * Returns the dedicated cache directory of this device.
+     * This directory will be deleted when the device is deleted.
+     */
+    File getDeviceCacheDir(@NonNull final GBDevice device);
 
     /**
      * Returns a String containing the device app sort order filename.
@@ -930,6 +973,13 @@ public interface DeviceCoordinator {
      * like artist, title, album, play state etc.
      */
     boolean supportsMusicInfo(@NonNull final GBDevice device);
+
+    /**
+     * Indicates whether the device support provides a GallerySource to manage photos and videos on the device.
+     */
+    default boolean supportsGallery(@NonNull final GBDevice device) {
+        return false;
+    }
 
     /**
      * Indicates whether the device supports features required by Sleep As Android
@@ -1065,6 +1115,14 @@ public interface DeviceCoordinator {
     }
 
     /**
+     * An importer for data exports of the vendor app, null if not supported for this device.
+     */
+    @Nullable
+    default VendorDataImporter getVendorDataImporter(@NonNull final GBDevice device) {
+        return null;
+    }
+
+    /**
      * The workout template capabilities of this device: sports, step types, durations, targets
      * and fields.
      */
@@ -1141,12 +1199,45 @@ public interface DeviceCoordinator {
 
     boolean supportsNavigation(@NonNull final GBDevice device);
 
-    boolean supportsNotifications(@NonNull final GBDevice device);
+    boolean supportsAppNotifications(@NonNull final GBDevice device);
+
+    /**
+     * Returns true if the device supports receiving phone call notifications.
+     */
+    boolean supportsPhoneCalls(@NonNull final GBDevice device);
+
+    /**
+     * Returns true if the device supports controlling calls on the phone (accept/reject/end).
+     */
+    boolean supportsCallControl(@NonNull final GBDevice device);
+
+    /**
+     * Returns true if the device has features that need network access from the phone.
+     */
+    boolean supportsInternetAccess(@NonNull final GBDevice device);
+
+    /**
+     * Returns true if the device can reply to a call with an SMS.
+     */
+    boolean supportsSmsReply(@NonNull final GBDevice device);
+
+    /**
+     * Returns true if the device can change the phone's silent mode / do not disturb.
+     */
+    boolean supportsPhoneSilentMode(@NonNull final GBDevice device);
+
+    /**
+     * Returns true if the device can receive the real-time GPS location of the phone.
+     */
+    boolean supportsGpsSharing(@NonNull final GBDevice device);
 
     int getOrderPriority();
 
+    /**
+     * Instantiates a new {@link  DeviceSupport}.
+     */
     @NonNull
-    Class<? extends DeviceSupport> getDeviceSupportClass(@NonNull final GBDevice device);
+    DeviceSupport createDeviceSupport(@NonNull final GBDevice device);
 
     EnumSet<ServiceDeviceSupport.Flags> getInitialFlags();
 
@@ -1226,11 +1317,23 @@ public interface DeviceCoordinator {
      */
     List<DeviceCardItem> getCardItems(@NonNull final GBDevice device);
 
+    /**
+     * Returns the quick controls of the device card, in display order.
+     */
+    List<QuickControl> getQuickControls(@NonNull final GBDevice device);
+
     DeviceKind getDeviceKind(@NonNull final GBDevice device);
 
     HeartRateZonesSpec getHeartRateZonesSpec(@NonNull final GBDevice device);
 
     Set<BarcodeFormat> getSupportedBarcodeFormats(@NonNull final GBDevice device);
+
+    boolean supportsLoyaltyCards(@NonNull final GBDevice device);
+
+    /**
+     * Whether the device can request a sync of loyalty cards.
+     */
+    boolean supportsLoyaltyCardsSyncRequest(@NonNull final GBDevice device);
 
     /**
      * @return delay in ms for this device to wait before a reconnection attempt is made.

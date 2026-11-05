@@ -17,7 +17,7 @@ import androidx.preference.PreferenceCategory
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import nodomain.freeyourgadget.gadgetbridge.GBApplication
 import nodomain.freeyourgadget.gadgetbridge.R
-import nodomain.freeyourgadget.gadgetbridge.util.BondingUtil
+import nodomain.freeyourgadget.gadgetbridge.util.CompanionDeviceUtil
 import nodomain.freeyourgadget.gadgetbridge.util.GB
 import nodomain.freeyourgadget.gadgetbridge.util.kotlin.getParcelableCompat
 import java.util.Locale
@@ -36,7 +36,7 @@ class CompanionDebugFragment : AbstractDebugFragment() {
         removeDynamicPrefs(companionDevicesHeader)
         removeDynamicPrefs(otherDevicesHeader)
 
-        val associations = BondingUtil.getCompanionAssociations(GBApplication.getContext()).toSet()
+        val associations = CompanionDeviceUtil.getCompanionAssociations(GBApplication.getContext()).toSet()
 
         val companionDevices = associations
             .map {
@@ -44,7 +44,8 @@ class CompanionDebugFragment : AbstractDebugFragment() {
                 Device(
                     it,
                     deviceByAddress?.aliasOrName ?: getString(R.string.unknown),
-                    deviceByAddress?.deviceCoordinator?.defaultIconResource ?: R.drawable.ic_device_unknown
+                    deviceByAddress?.deviceCoordinator?.defaultIconResource ?: R.drawable.ic_device_unknown,
+                    deviceByAddress?.isConnected == true
                 )
             }
             .sortedBy { it.name }
@@ -55,13 +56,14 @@ class CompanionDebugFragment : AbstractDebugFragment() {
                 Device(
                     it.address,
                     it.aliasOrName,
-                    it.deviceCoordinator.defaultIconResource
+                    it.deviceCoordinator.defaultIconResource,
+                    it.isConnected
                 )
             }
 
         if (!companionDevices.isEmpty()) {
             for (device in companionDevices) {
-                addDynamicPref(companionDevicesHeader, device.name, device.address, device.icon) {
+                addDynamicDevicePref(companionDevicesHeader, device.name, device.address, device.icon, device.connected) {
                     MaterialAlertDialogBuilder(requireContext())
                         .setCancelable(true)
                         .setIcon(device.icon)
@@ -79,7 +81,7 @@ class CompanionDebugFragment : AbstractDebugFragment() {
         if (!otherDevices.isEmpty()) {
             otherDevicesHeader.isVisible = true
             for (device in otherDevices) {
-                addDynamicPref(otherDevicesHeader, device.name, device.address, device.icon) {
+                addDynamicDevicePref(otherDevicesHeader, device.name, device.address, device.icon, device.connected) {
                     MaterialAlertDialogBuilder(requireContext())
                         .setCancelable(true)
                         .setIcon(device.icon)
@@ -95,7 +97,7 @@ class CompanionDebugFragment : AbstractDebugFragment() {
         }
     }
 
-    private data class Device(val address: String, val name: String, val icon: Int)
+    private data class Device(val address: String, val name: String, val icon: Int, val connected: Boolean)
 
     // FIXME replace deprecated code
     @Suppress("OVERRIDE_DEPRECATION", "DEPRECATION")
@@ -130,20 +132,20 @@ class CompanionDebugFragment : AbstractDebugFragment() {
     }
 
     private fun unpairCompanion(device: Device) {
-        BondingUtil.Disassociate(requireContext(), device.address)
+        CompanionDeviceUtil.Disassociate(requireContext(), device.address)
         reloadDevices()
     }
 
     private fun pairAsCompanion(device: Device) {
-        if (BondingUtil.isCompanionAssociated(requireContext(), device.address)) {
+        if (CompanionDeviceUtil.isCompanionAssociated(requireContext(), device.address)) {
             GB.toast(device.name + " already paired as companion", Toast.LENGTH_LONG, GB.INFO)
             return
         }
 
-        BondingUtil.associateCompanion(requireActivity(), device.address, false, SELECT_DEVICE_REQUEST_CODE) {
+        CompanionDeviceUtil.associateCompanion(requireActivity(), device.address, false, SELECT_DEVICE_REQUEST_CODE, {
             GB.toast("Companion pairing success", Toast.LENGTH_SHORT, GB.INFO)
             reloadDevices()
-        }
+        }, null)
     }
 
     companion object {

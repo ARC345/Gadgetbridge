@@ -38,6 +38,7 @@ import org.slf4j.LoggerFactory;
 import java.text.SimpleDateFormat;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Collections;
 import java.util.Comparator;
@@ -64,12 +65,11 @@ import nodomain.freeyourgadget.gadgetbridge.activities.workouts.StatTileData;
 import nodomain.freeyourgadget.gadgetbridge.activities.workouts.StatTileGridUtilKt;
 import nodomain.freeyourgadget.gadgetbridge.database.DBHandler;
 import nodomain.freeyourgadget.gadgetbridge.devices.DeviceCoordinator;
-import nodomain.freeyourgadget.gadgetbridge.devices.SampleProvider;
 import nodomain.freeyourgadget.gadgetbridge.devices.TimeSampleProvider;
-import nodomain.freeyourgadget.gadgetbridge.entities.AbstractActivitySample;
 import nodomain.freeyourgadget.gadgetbridge.impl.GBDevice;
 import nodomain.freeyourgadget.gadgetbridge.model.HrvSummarySample;
 import nodomain.freeyourgadget.gadgetbridge.model.HrvValueSample;
+import nodomain.freeyourgadget.gadgetbridge.model.SleepSession;
 import nodomain.freeyourgadget.gadgetbridge.util.Accumulator;
 import nodomain.freeyourgadget.gadgetbridge.util.DateTimeUtils;
 
@@ -88,12 +88,14 @@ public class HRVStatusFragment extends AbstractChartFragment<HRVStatusFragment.H
     private enum PeriodDataType {
         DAILY_AVERAGE,
         LAST_NIGHT_AVERAGE,
+        WEEKLY_AVERAGE,
         DAILY_RANGE
     }
 
     private static final PeriodDataType[] PERIOD_DATA_TYPE_ORDER = {
             PeriodDataType.DAILY_AVERAGE,
             PeriodDataType.LAST_NIGHT_AVERAGE,
+            PeriodDataType.WEEKLY_AVERAGE,
             PeriodDataType.DAILY_RANGE
     };
     private static final PeriodDataType DEFAULT_PERIOD_DATA_TYPE = PeriodDataType.DAILY_AVERAGE;
@@ -113,11 +115,13 @@ public class HRVStatusFragment extends AbstractChartFragment<HRVStatusFragment.H
     protected int HRV_RANGE_COLOR;
     protected int HRV_LAST_NIGHT_COLOR;
     protected int HRV_BASELINE_FILL_COLOR;
+    protected int HRV_WEEKLY_AVERAGE_COLOR;
 
     private ViewMode viewMode = ViewMode.PERIOD;
     private int totalDays = DEFAULT_TOTAL_DAYS;
     private boolean showDailyAverage = true;
     private boolean showLastNightAverage = true;
+    private boolean showWeeklyAverage = true;
     private boolean showDailyRange = false;
 
     public static HRVStatusFragment newLastNightInstance() {
@@ -219,15 +223,18 @@ public class HRVStatusFragment extends AbstractChartFragment<HRVStatusFragment.H
 
             final boolean selectedDailyAverage = isPeriodDataTypeSelected(PeriodDataType.DAILY_AVERAGE);
             final boolean selectedLastNightAverage = isPeriodDataTypeSelected(PeriodDataType.LAST_NIGHT_AVERAGE);
+            final boolean selectedWeeklyAverage = isPeriodDataTypeSelected(PeriodDataType.WEEKLY_AVERAGE);
             final boolean selectedDailyRange = isPeriodDataTypeSelected(PeriodDataType.DAILY_RANGE);
             if (showDailyAverage == selectedDailyAverage
                     && showLastNightAverage == selectedLastNightAverage
+                    && showWeeklyAverage == selectedWeeklyAverage
                     && showDailyRange == selectedDailyRange) {
                 return;
             }
 
             showDailyAverage = selectedDailyAverage;
             showLastNightAverage = selectedLastNightAverage;
+            showWeeklyAverage = selectedWeeklyAverage;
             showDailyRange = selectedDailyRange;
             refresh();
         });
@@ -238,6 +245,7 @@ public class HRVStatusFragment extends AbstractChartFragment<HRVStatusFragment.H
         chip.setId(View.generateViewId());
         chip.setText(getString(getPeriodDataTypeLabel(dataType)));
         chip.setTag(dataType);
+        chip.setVisibility(dataType == PeriodDataType.WEEKLY_AVERAGE ? View.GONE : View.VISIBLE);
         mHRVStatusDataTypeGroup.addView(chip);
         chip.setChecked(isPeriodDataTypeVisible(dataType));
     }
@@ -253,6 +261,8 @@ public class HRVStatusFragment extends AbstractChartFragment<HRVStatusFragment.H
                 return showDailyAverage;
             case LAST_NIGHT_AVERAGE:
                 return showLastNightAverage;
+            case WEEKLY_AVERAGE:
+                return showWeeklyAverage;
             case DAILY_RANGE:
                 return showDailyRange;
             default:
@@ -276,6 +286,8 @@ public class HRVStatusFragment extends AbstractChartFragment<HRVStatusFragment.H
                 return R.string.hrv_status_day_avg_legend;
             case LAST_NIGHT_AVERAGE:
                 return R.string.hrv_status_nightly_avg_legend;
+            case WEEKLY_AVERAGE:
+                return R.string.hrv_status_seven_days_avg_legend;
             case DAILY_RANGE:
                 return R.string.hrv_status_daily_range_legend;
             default:
@@ -295,6 +307,7 @@ public class HRVStatusFragment extends AbstractChartFragment<HRVStatusFragment.H
         HRV_RANGE_COLOR = getResources().getColor(R.color.hrv_status_range_color);
         HRV_LAST_NIGHT_COLOR = getResources().getColor(R.color.hrv_status_last_night_color);
         HRV_BASELINE_FILL_COLOR = getResources().getColor(R.color.hrv_status_baseline_fill_color);
+        HRV_WEEKLY_AVERAGE_COLOR = getResources().getColor(R.color.hrv_status_weekly_avg_color);
     }
 
     @Override
@@ -403,6 +416,7 @@ public class HRVStatusFragment extends AbstractChartFragment<HRVStatusFragment.H
         final long[] epochDays = new long[n];
         final int[] dayAvg = new int[n];
         final int[] lastNight = new int[n];
+        final int[] weeklyAvg = new int[n];
         final int[] dayMin = new int[n];
         final int[] dayMax = new int[n];
         final int[] baselineLow = new int[n];
@@ -412,6 +426,7 @@ public class HRVStatusFragment extends AbstractChartFragment<HRVStatusFragment.H
             epochDays[i] = LocalDate.of(day.day.get(Calendar.YEAR), day.day.get(Calendar.MONTH) + 1, day.day.get(Calendar.DAY_OF_MONTH)).toEpochDay();
             dayAvg[i] = day.dayAvg;
             lastNight[i] = day.lastNight;
+            weeklyAvg[i] = day.weeklyAvg;
             dayMin[i] = day.dayMin;
             dayMax[i] = day.dayMax;
             baselineLow[i] = day.baseLineBalancedLower;
@@ -423,11 +438,17 @@ public class HRVStatusFragment extends AbstractChartFragment<HRVStatusFragment.H
                 getString(R.string.hrv_status_nightly_avg_legend),
                 getString(R.string.hrv_status_daily_range_legend),
                 getString(R.string.hrv_status_baseline_label),
+                getString(R.string.hrv_status_seven_days_avg_legend),
         };
-        final int[] colors = {HRV_AVERAGE_COLOR, HRV_LAST_NIGHT_COLOR, HRV_RANGE_COLOR, HRV_BASELINE_FILL_COLOR};
+        final int[] colors = {HRV_AVERAGE_COLOR, HRV_LAST_NIGHT_COLOR, HRV_RANGE_COLOR, HRV_BASELINE_FILL_COLOR, HRV_WEEKLY_AVERAGE_COLOR};
+        final boolean hasWeeklyAverage = Arrays.stream(weeklyAvg).anyMatch(v -> v > 0);
+        final Chip weeklyChip = findPeriodDataTypeChip(PeriodDataType.WEEKLY_AVERAGE);
+        if (weeklyChip != null) {
+            weeklyChip.setVisibility(hasWeeklyAverage ? View.VISIBLE : View.GONE);
+        }
         final ChartSpec spec = HrvChartData.periodSpec(
-                epochDays, dayAvg, lastNight, dayMin, dayMax, baselineLow, baselineHigh,
-                showDailyAverage, showLastNightAverage, showDailyRange, labels, colors
+                epochDays, dayAvg, lastNight, weeklyAvg, dayMin, dayMax, baselineLow, baselineHigh,
+                showDailyAverage, showLastNightAverage, showWeeklyAverage && hasWeeklyAverage, showDailyRange, labels, colors
         );
 
         final List<String> rowLabels = new ArrayList<>();
@@ -443,6 +464,10 @@ public class HRVStatusFragment extends AbstractChartFragment<HRVStatusFragment.H
                 case "last_night":
                     rowColors.add(colors[1]);
                     rowTexts.add(i -> formatHrvStatusValue(lastNight[i]));
+                    break;
+                case "weekly_avg":
+                    rowColors.add(colors[4]);
+                    rowTexts.add(i -> formatHrvStatusValue(weeklyAvg[i]));
                     break;
                 case "day_range":
                     rowColors.add(colors[2]);
@@ -597,27 +622,18 @@ public class HRVStatusFragment extends AbstractChartFragment<HRVStatusFragment.H
         final int startTs = (int) (searchStart.getTimeInMillis() / 1000);
         final int endTs = (int) (searchEnd.getTimeInMillis() / 1000);
 
-        final SampleProvider<? extends AbstractActivitySample> sampleProvider =
-                device.getDeviceCoordinator().getSampleProvider(device, db.getDaoSession());
-        final List<? extends AbstractActivitySample> activitySamples =
-                sampleProvider.getAllActivitySamples(startTs, endTs);
-
-        if (activitySamples.isEmpty()) {
-            return new LastNightData(new ArrayList<>(), searchStart, searchEnd);
-        }
-
-        final SleepAnalysis sleepAnalysis = new SleepAnalysis();
-        final List<SleepAnalysis.SleepSession> sleepSessions =
-                sleepAnalysis.calculateSleepSessions(activitySamples);
+        final List<SleepSession> sleepSessions = device.getDeviceCoordinator()
+                .getSleepSessionProvider(device, db.getDaoSession())
+                .getSleepSessions(startTs, endTs);
         if (sleepSessions.isEmpty()) {
             return new LastNightData(new ArrayList<>(), searchStart, searchEnd);
         }
 
-        final SleepAnalysis.SleepSession lastSession = sleepSessions.get(sleepSessions.size() - 1);
+        final SleepSession lastSession = sleepSessions.get(sleepSessions.size() - 1);
         final Calendar sleepStart = Calendar.getInstance();
-        sleepStart.setTime(lastSession.getSleepStart());
+        sleepStart.setTimeInMillis(lastSession.getStartTime());
         final Calendar sleepEnd = Calendar.getInstance();
-        sleepEnd.setTime(lastSession.getSleepEnd());
+        sleepEnd.setTimeInMillis(lastSession.getEndTime());
 
         final List<? extends HrvValueSample> samples = getHrvValueSamples(
                 db,

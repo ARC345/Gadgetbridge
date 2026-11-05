@@ -64,7 +64,7 @@ internal data class BarLayout(val width: Float, val gap: Float) {
  * Builds MPAndroidChart data from a [ChartSpec]. Entry data holds the original x, since grouped bars are offset.
  */
 internal object ChartDataBuilder {
-    const val LINE_WIDTH_DP = 2f
+    const val LINE_WIDTH_DP = 1.75f
     private const val POINT_RADIUS_DP = 3.5f
     private const val AREA_FILL_ALPHA = 0.45f
     private const val MAX_CANDLE_SPACE = 0.45f
@@ -98,6 +98,7 @@ internal object ChartDataBuilder {
         val bands = ranges.filter { (it.style as SeriesStyle.Range).width == null }
         val candles = ranges - bands.toSet()
         val lines = spec.series.filter { it.style is SeriesStyle.Line && it.points.isNotEmpty() }
+        val stages = spec.series.filter { it.style is SeriesStyle.Stages && it.points.isNotEmpty() }
         require(columns.isEmpty() || bands.isEmpty()) { "Range and column series can't share a chart" }
         val step = layout.width + layout.gap
         return CombinedData().apply {
@@ -117,8 +118,11 @@ internal object ChartDataBuilder {
             if (candles.isNotEmpty()) {
                 candleData = CandleData(candles.map { candleDataSet(it, xOrigin) })
             }
-            if (lines.isNotEmpty()) {
-                lineData = LineData(lines.flatMap { series -> segments(series).map { lineDataSet(series, it, xOrigin) } })
+            if (lines.isNotEmpty() || stages.isNotEmpty()) {
+                lineData = LineData(
+                    stages.map { stagesDataSet(it, xOrigin) } +
+                        lines.flatMap { series -> segments(series).map { lineDataSet(series, it, xOrigin) } }
+                )
             }
         }
     }
@@ -146,7 +150,8 @@ internal object ChartDataBuilder {
         }
         val groupColors = group.map { (it.style as SeriesStyle.Column).color }
         return BarDataSet(entries, group.first().label).apply {
-            colors = if (isStacked) groupColors else groupColors.take(1)
+            // The renderer cycles colors over stackSize slots per entry, including padded sections.
+            colors = groupColors.take(stackSize)
             barCornerRadius = cornerRadiusDp
             highlightAlpha = 0
             isDrawValuesEnabled = false
@@ -178,6 +183,20 @@ internal object ChartDataBuilder {
         return CandleDataSet(entries, series.label).apply {
             color = style.color
             barSpace = ((1f - (style.width ?: 1f)) / 2f).coerceIn(0f, MAX_CANDLE_SPACE)
+            isHighlightEnabled = false
+            isDrawValuesEnabled = false
+            axisDependency = axisDependency(series)
+        }
+    }
+
+    /**
+     * Invisible entries that keep the x range of a [SeriesStyle.Stages] series. [StagesRenderer] draws it.
+     */
+    private fun stagesDataSet(series: ChartSeries, xOrigin: Double): LineDataSet<Float> {
+        val entries = series.points.map { Entry(x = (it.x - xOrigin).toFloat(), y = it.y.toFloat(), data = it.x.toFloat()) }
+        return LineDataSet(entries, series.label).apply {
+            color = Color.TRANSPARENT
+            isDrawCirclesEnabled = false
             isHighlightEnabled = false
             isDrawValuesEnabled = false
             axisDependency = axisDependency(series)

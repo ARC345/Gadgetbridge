@@ -2,6 +2,7 @@ package nodomain.freeyourgadget.gadgetbridge.activities.debug
 
 import android.text.InputType
 import android.widget.Toast
+import androidx.annotation.DrawableRes
 import androidx.preference.EditTextPreference
 import androidx.preference.ListPreference
 import androidx.preference.Preference
@@ -12,7 +13,9 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import nodomain.freeyourgadget.gadgetbridge.GBApplication
 import nodomain.freeyourgadget.gadgetbridge.R
 import nodomain.freeyourgadget.gadgetbridge.activities.AbstractPreferenceFragment
+import nodomain.freeyourgadget.gadgetbridge.activities.AbstractSettingsActivityV2
 import nodomain.freeyourgadget.gadgetbridge.impl.GBDevice
+import nodomain.freeyourgadget.gadgetbridge.util.DeviceIconUtils
 import nodomain.freeyourgadget.gadgetbridge.util.GB
 import java.util.UUID
 
@@ -108,6 +111,20 @@ abstract class AbstractDebugFragment : AbstractPreferenceFragment() {
         return pref
     }
 
+    protected fun addDynamicDevicePref(
+        group: PreferenceGroup?,
+        title: String,
+        summary: String,
+        @DrawableRes icon: Int,
+        connected: Boolean,
+        onClickFunction: () -> Unit,
+    ): Preference {
+        val pref = addDynamicPref(group, title, summary, onClickFunction = onClickFunction)
+        pref.layoutResource = R.layout.preference_device
+        pref.icon = DeviceIconUtils.tile(requireContext(), icon, connected)
+        return pref
+    }
+
     protected fun addDynamicCategory(title: String) {
         val pref = PreferenceCategory(requireContext())
         pref.key = "${PREF_DYNAMIC_PREFIX}_category_${UUID.randomUUID()})"
@@ -144,10 +161,7 @@ abstract class AbstractDebugFragment : AbstractPreferenceFragment() {
     }
 
     protected fun goTo(fragment: AbstractDebugFragment) {
-        requireActivity().supportFragmentManager.beginTransaction()
-            .replace(R.id.settings_container, fragment)
-            .addToBackStack(null)
-            .commit()
+        (requireActivity() as AbstractSettingsActivityV2).goToScreen(fragment, null, null)
     }
 
     companion object {

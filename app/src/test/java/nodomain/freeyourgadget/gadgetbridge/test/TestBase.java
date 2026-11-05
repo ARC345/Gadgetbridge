@@ -21,6 +21,9 @@ import nodomain.freeyourgadget.gadgetbridge.database.DBHandler;
 import nodomain.freeyourgadget.gadgetbridge.entities.DaoSession;
 import nodomain.freeyourgadget.gadgetbridge.impl.GBDevice;
 import nodomain.freeyourgadget.gadgetbridge.model.DeviceType;
+import java.lang.reflect.Field;
+import java.util.List;
+import nodomain.freeyourgadget.gadgetbridge.devices.DeviceManager;
 
 import static org.junit.Assert.assertNotNull;
 
@@ -32,7 +35,7 @@ import static org.junit.Assert.assertNotNull;
  * directory.
  */
 @RunWith(RobolectricTestRunner.class)
-@Config(sdk = 23, application = GBTestApplication.class)
+@Config(sdk = 24, application = GBTestApplication.class)
 public abstract class TestBase {
     protected GBApplication app = (GBApplication) RuntimeEnvironment.application;
     protected DaoSession daoSession;
@@ -79,5 +82,18 @@ public abstract class TestBase {
 
     protected Context getContext() {
         return app;
+    }
+
+    protected void registerDeviceWithManager(final GBDevice device) {
+        try {
+            final DeviceManager deviceManager = GBApplication.app().getDeviceManager();
+            final Field field = DeviceManager.class.getDeclaredField("deviceList");
+            field.setAccessible(true);
+            final List<GBDevice> deviceList = (List<GBDevice>) field.get(deviceManager);
+            deviceList.clear();
+            deviceList.add(device);
+        } catch (final Exception e) {
+            throw new AssertionError("Failed to register test device", e);
+        }
     }
 }

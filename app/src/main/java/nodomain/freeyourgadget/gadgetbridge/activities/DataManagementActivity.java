@@ -21,7 +21,9 @@ import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.preference.PreferenceManager;
 import android.view.MenuItem;
+import android.view.View;
 import android.widget.Button;
+import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -45,9 +47,12 @@ import nodomain.freeyourgadget.gadgetbridge.GBApplication;
 import nodomain.freeyourgadget.gadgetbridge.GBDatabaseManager;
 import nodomain.freeyourgadget.gadgetbridge.R;
 import nodomain.freeyourgadget.gadgetbridge.activities.files.FileManagerActivity;
+import nodomain.freeyourgadget.gadgetbridge.activities.vendorimport.VendorDataImportDeviceActivity;
 import nodomain.freeyourgadget.gadgetbridge.database.DBHandler;
 import nodomain.freeyourgadget.gadgetbridge.database.DBHelper;
 import nodomain.freeyourgadget.gadgetbridge.entities.Device;
+import nodomain.freeyourgadget.gadgetbridge.externalevents.notifications.apps.NotificationAppRepository;
+import nodomain.freeyourgadget.gadgetbridge.prefs.GBPrefsMigrator;
 import nodomain.freeyourgadget.gadgetbridge.util.FileUtils;
 import nodomain.freeyourgadget.gadgetbridge.util.GB;
 import nodomain.freeyourgadget.gadgetbridge.util.ImportExportSharedPreferences;
@@ -114,6 +119,27 @@ public class DataManagementActivity extends AbstractGBActivity {
         final Button restoreFromZipButton = findViewById(R.id.restoreFromZipButton);
         restoreFromZipButton.setOnClickListener(v -> restoreFileChooser.launch(new String[]{"application/zip"}));
 
+        //
+        // Vendor import
+        //
+
+        final View vendorImportSection = findViewById(R.id.vendorImportSection);
+        vendorImportSection.setVisibility(GBApplication.app().getDeviceManager().getSupportedDevices().isEmpty() ? View.GONE : View.VISIBLE);
+        final Button vendorImportButton = findViewById(R.id.vendorImportButton);
+        vendorImportButton.setOnClickListener(v -> startActivity(new Intent(this, VendorDataImportDeviceActivity.class)));
+
+        //
+        // Legacy export/import
+        //
+
+        final View legacyExportContent = findViewById(R.id.legacyExportContent);
+        final ImageView legacyExportArrow = findViewById(R.id.legacyExportArrow);
+        findViewById(R.id.legacyExportHeader).setOnClickListener(v -> {
+            final boolean expand = legacyExportContent.getVisibility() != View.VISIBLE;
+            legacyExportContent.setVisibility(expand ? View.VISIBLE : View.GONE);
+            legacyExportArrow.setRotation(expand ? 180 : 0);
+        });
+
         TextView dbPath = findViewById(R.id.activity_data_management_path);
         dbPath.setText(getExternalPath());
 
@@ -152,14 +178,12 @@ public class DataManagementActivity extends AbstractGBActivity {
             List<Device> activeDevices = DBHelper.getActiveDevices(lockHandler.getDaoSession());
             for (Device dbDevice : activeDevices) {
                 SharedPreferences deviceSharedPrefs = GBApplication.getDeviceSpecificSharedPrefs(dbDevice.getIdentifier());
-                if (sharedPrefs != null) {
-                    File myPath = FileUtils.getExternalFilesDir();
-                    File myFile = new File(myPath, "Export_preference_" + FileUtils.makeValidFileName(dbDevice.getIdentifier()));
-                    try {
-                        ImportExportSharedPreferences.exportToFile(deviceSharedPrefs, myFile);
-                    } catch (Exception ignore) {
-                        // some devices no not have device specific preferences
-                    }
+                File myPath = FileUtils.getExternalFilesDir();
+                File myFile = new File(myPath, "Export_preference_" + FileUtils.makeValidFileName(dbDevice.getIdentifier()));
+                try {
+                    ImportExportSharedPreferences.exportToFile(deviceSharedPrefs, myFile);
+                } catch (Exception ignore) {
+                    // some devices no not have device specific preferences
                 }
             }
         } catch (Exception e) {
@@ -175,27 +199,27 @@ public class DataManagementActivity extends AbstractGBActivity {
         } catch (Exception ex) {
             GB.toast(DataManagementActivity.this, getString(R.string.dbmanagementactivity_error_importing_db, ex.getLocalizedMessage()), Toast.LENGTH_LONG, GB.ERROR, ex);
         }
+        GBPrefsMigrator.migratePrefsIfNeeded(sharedPrefs);
+        NotificationAppRepository.INSTANCE.reload();
 
         try (DBHandler lockHandler = GBApplication.acquireDB()) {
             List<Device> activeDevices = DBHelper.getActiveDevices(lockHandler.getDaoSession());
             for (Device dbDevice : activeDevices) {
                 SharedPreferences deviceSharedPrefs = GBApplication.getDeviceSpecificSharedPrefs(dbDevice.getIdentifier());
-                if (sharedPrefs != null) {
-                    File myPath = FileUtils.getExternalFilesDir();
-                    File myFile = new File(myPath, "Export_preference_" + FileUtils.makeValidFileName(dbDevice.getIdentifier()));
+                File myPath = FileUtils.getExternalFilesDir();
+                File myFile = new File(myPath, "Export_preference_" + FileUtils.makeValidFileName(dbDevice.getIdentifier()));
 
-                    if (!myFile.exists()) { //first try to use file in new format de_ad_be_af, if it doesn't exist use old format de:at:be:af
-                        myFile = new File(myPath, "Export_preference_" + dbDevice.getIdentifier());
-                        LOG.info("Trying to import with older filename");
-                    }else{
-                        LOG.info("Trying to import with new filename");
-                    }
+                if (!myFile.exists()) { //first try to use file in new format de_ad_be_af, if it doesn't exist use old format de:at:be:af
+                    myFile = new File(myPath, "Export_preference_" + dbDevice.getIdentifier());
+                    LOG.info("Trying to import with older filename");
+                }else{
+                    LOG.info("Trying to import with new filename");
+                }
 
-                    try {
-                        ImportExportSharedPreferences.importFromFile(deviceSharedPrefs, myFile);
-                    } catch (Exception ignore) {
-                        // some devices no not have device specific preferences
-                    }
+                try {
+                    ImportExportSharedPreferences.importFromFile(deviceSharedPrefs, myFile);
+                } catch (Exception ignore) {
+                    // some devices no not have device specific preferences
                 }
             }
         } catch (Exception e) {

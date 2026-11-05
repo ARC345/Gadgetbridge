@@ -97,8 +97,6 @@ import nodomain.freeyourgadget.gadgetbridge.model.MetricSample;
 import nodomain.freeyourgadget.gadgetbridge.model.Spo2Sample;
 import nodomain.freeyourgadget.gadgetbridge.service.devices.garmin.FileType;
 import nodomain.freeyourgadget.gadgetbridge.service.devices.garmin.GarminUtils;
-import nodomain.freeyourgadget.gadgetbridge.service.devices.garmin.fit.enums.Event;
-import nodomain.freeyourgadget.gadgetbridge.service.devices.garmin.fit.enums.EventType;
 import nodomain.freeyourgadget.gadgetbridge.service.devices.garmin.fit.enums.HrvStatus;
 import nodomain.freeyourgadget.gadgetbridge.service.devices.garmin.fit.enums.SleepLevel;
 import nodomain.freeyourgadget.gadgetbridge.service.devices.garmin.fit.exception.FitParseException;
@@ -165,7 +163,7 @@ public class FitImporter {
     private final Map<Integer, Integer> unknownRecords = new HashMap<>();
     @Nullable
     private FitSleepDataInfo fitSleepDataInfo = null;
-    private final List<FitSleepDataRaw> fitSleepDataRawSamples = new ArrayList<>();
+    private RawSleepStream rawSleepStream = new RawSleepStream();
     private final List<GarminSleepRestlessMomentsSample> sleepRestlessMomentsSamples = new ArrayList<>();
     private final List<BatteryLevel> batterySamples = new ArrayList<>();
     @Nullable
@@ -177,7 +175,7 @@ public class FitImporter {
     public FitImporter(final Context context, final GBDevice gbDevice) {
         this.context = context;
         this.gbDevice = gbDevice;
-        this.workoutParser = new GarminWorkoutParser(context);
+        this.workoutParser = new GarminWorkoutParser(context, gbDevice);
     }
 
     /**
@@ -235,9 +233,10 @@ public class FitImporter {
                     LOG.warn("Already had sleep data info: {}", fitSleepDataInfo);
                 }
                 fitSleepDataInfo = newFitSleepDataInfo;
+                rawSleepStream.onInfo(ts, newFitSleepDataInfo.getSampleLength());
             } else if (record instanceof FitSleepDataRaw fitSleepDataRaw) {
                 //LOG.debug("Sleep Data Raw: {}", fitSleepDataRaw);
-                fitSleepDataRawSamples.add(fitSleepDataRaw);
+                rawSleepStream.onRaw(fitSleepDataRaw.getHeartRate(), fitSleepDataRaw.getMovement());
             } else if (record instanceof FitSleepRestlessMoments fitSleepRestlessMoments) {
                 //LOG.debug("Sleep Restless Moments: {}", fitSleepRestlessMoments);
                 if (fitSleepRestlessMoments.getRestlessMomentsCount() != null) {
@@ -279,6 +278,7 @@ public class FitImporter {
                 sample.setTimestamp(ts * 1000L);
                 sample.setStage(stage.num);
                 sleepStageSamples.add(sample);
+                rawSleepStream.onLevel(ts, stage.num);
             } else if (record instanceof FitNapEvent nap) {
                 if (nap.getStartTime() == null || nap.getEndTime() == null) {
                     continue;
@@ -483,9 +483,9 @@ public class FitImporter {
                 final Integer level = fitEnduranceScore.getLevel();
                 addMetric(ts, enduranceScore, MetricSample.Metric.GARMIN_ENDURANCE_SCORE, level);
             } else if (record instanceof FitFunctionalMetrics fitFunctionalMetrics) {
-                final Integer cyclingLactaceThresholdHr = fitFunctionalMetrics.getCyclingLactateThresholdHr();
+                final Integer cyclingLactateThresholdHr = fitFunctionalMetrics.getCyclingLactateThresholdHr();
                 final Integer functionalThresholdPower = fitFunctionalMetrics.getFunctionalThresholdPower();
-                addMetric(ts, functionalThresholdPower, MetricSample.Metric.GARMIN_FUNCTIONAL_THRESHOLD_POWER, cyclingLactaceThresholdHr);
+                addMetric(ts, functionalThresholdPower, MetricSample.Metric.GARMIN_FUNCTIONAL_THRESHOLD_POWER, cyclingLactateThresholdHr);
 
                 final Integer runningLactateThresholdHr = fitFunctionalMetrics.getRunningLactateThresholdHr();
                 final Integer runningLactateThresholdPower = fitFunctionalMetrics.getRunningLactateThresholdPower();
@@ -759,7 +759,7 @@ public class FitImporter {
         trainingLoadChronicSamples.clear();
         unknownRecords.clear();
         fitSleepDataInfo = null;
-        fitSleepDataRawSamples.clear();
+        rawSleepStream = new RawSleepStream();
         sleepRestlessMomentsSamples.clear();
         batterySamples.clear();
         fileId = null;
@@ -916,13 +916,13 @@ public class FitImporter {
     }
 
     /**
-     * As per #4048, devices that do not have a sleep widget send raw sleep samples, which we do not
-     * know how to parse. Therefore, we don't persist the sleep stages they report (they're all awake),
-     * but we fake light sleep for the duration of the raw sleep samples, in order to have some data
-     * at all.
+     * As per #4048, devices that do not have a sleep widget send raw sleep samples instead of sleep
+     * stages (the stages they report are all awake or unmeasurable). Their raw stream runs around
+     * the clock and is cut into a new file at midnight and at every sync, so sleep is estimated
+     * from the stored minutes of all the files around this one, see {@link RawSleepNights}.
      */
     private void processRawSleepSamples(final DaoSession session) {
-        if (fitSleepDataRawSamples.isEmpty()) {
+        if (rawSleepStream.getRawCount() == 0) {
             return;
         }
 
@@ -933,30 +933,10 @@ public class FitImporter {
             return;
         }
 
-        final long asleepTimeMillis = Objects.requireNonNull(fileId.getTimeCreated()).intValue() * 1000L;
-        final long wakeTimeMillis = asleepTimeMillis + fitSleepDataRawSamples.size() * 60 * 1000L;
-
-        LOG.debug("Got {} raw sleep samples - faking sleep events from {} to {}", fitSleepDataRawSamples.size(), asleepTimeMillis, wakeTimeMillis);
-
-        // We only need to fake sleep start and end times, the sample provider will take care of the rest
         try {
-            final GarminEventSampleProvider sampleProvider = new GarminEventSampleProvider(gbDevice, session);
-
-            final GarminEventSample sampleFallAsleep = new GarminEventSample();
-            sampleFallAsleep.setTimestamp(asleepTimeMillis);
-            sampleFallAsleep.setEvent(Event.DETECT_SLEEP); // sleep
-            sampleFallAsleep.setEventType(EventType.START); // sleep start
-            sampleFallAsleep.setData(-1L); // in actual samples they're a garmin epoch, this way we can identify them
-
-            final GarminEventSample sampleWakeUp = new GarminEventSample();
-            sampleWakeUp.setTimestamp(wakeTimeMillis);
-            sampleWakeUp.setEvent(Event.DETECT_SLEEP); // sleep
-            sampleWakeUp.setEventType(EventType.STOP); // sleep end
-            sampleWakeUp.setData(-1L); // in actual samples they're a garmin epoch, this way we can identify them
-
-            persistAbstractSamples(List.of(sampleFallAsleep, sampleWakeUp), sampleProvider);
+            RawSleepNights.importMinutes(gbDevice, session, context, rawSleepStream.minutes());
         } catch (final Exception e) {
-            GB.toast(context, "Error faking event samples", Toast.LENGTH_LONG, GB.ERROR, e);
+            GB.toast(context, "Error estimating sleep", Toast.LENGTH_LONG, GB.ERROR, e);
         }
     }
 
