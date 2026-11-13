@@ -111,7 +111,7 @@ public class GBDaoGenerator {
             outputDir.mkdirs();
         }
 
-        final Schema schema = new Schema(160, MAIN_PACKAGE + ".entities");
+        final Schema schema = new Schema(161, MAIN_PACKAGE + ".entities");
 
         final List<Entity> sampleProvidersToGenerate = new LinkedList<>();
         final List<Entity> batterySampleProvidersToGenerate = new LinkedList<>();
@@ -324,6 +324,7 @@ public class GBDaoGenerator {
         sampleProvidersToGenerate.add(addGenericBodyEnergySample(schema, user, device));
         addGenericHydrationSample(schema, user, device);
         addGenericDurationSample(schema, user, device);
+        addBodyMeasurements(schema, user);
 
         validateSerializableEntities(schema);
         final DeviceDataTablesGenerator deviceDataTablesGenerator = new DeviceDataTablesGenerator(schema, device);
@@ -2999,6 +3000,33 @@ public class GBDaoGenerator {
         addCommonTimeSampleProperties("AbstractBodyEnergySample", sample, user, device);
         sample.addIntProperty(SAMPLE_ENERGY).notNull().codeBeforeGetter(OVERRIDE);
         return sample;
+    }
+
+    private static void addBodyMeasurements(Schema schema, Entity user) {
+        // One row each time the user measures. The data belongs to the user, not to a device,
+        // so it stays when a device is deleted.
+        Entity entry = addEntity(schema, "BodyMeasurementEntry");
+        entry.addIdProperty().autoincrement();
+        Property userId = entry.addLongProperty("userId").notNull().getProperty();
+        entry.addToOne(user, userId);
+        Property timestamp = entry.addLongProperty("timestamp").notNull()
+                .javaDocGetterAndSetter("Milliseconds since the epoch.").getProperty();
+        entry.addStringProperty("note")
+                .javaDocGetterAndSetter("An optional note. A blank note is stored as null.");
+        final Index indexTimestamp = new Index();
+        indexTimestamp.addProperty(timestamp);
+        entry.addIndex(indexTimestamp);
+
+        // One row for each value of an entry. There is no to-one to the entry, and greenDAO makes
+        // no foreign-key cascade: the repository deletes the values of an entry itself. The key
+        // has two columns, so the DAO key type is Void and load/update/delete throw; write with
+        // insertOrReplace and delete with a query.
+        Entity value = addEntity(schema, "BodyMeasurementValue");
+        value.addLongProperty("entryId").notNull().primaryKey();
+        value.addIntProperty("type").notNull().primaryKey()
+                .javaDocGetterAndSetter("The code of BodyMeasurementType.");
+        value.addFloatProperty("value").notNull()
+                .javaDocGetterAndSetter("In the storage unit of the type: cm, mm, kg or %.");
     }
 
     private static Entity addGenericHydrationSample(Schema schema, Entity user, Entity device) {
