@@ -21,6 +21,16 @@ enum class WeightUnit {
             }
         }
 
+        /** The inverse of [convertWeight]: a value in [unit] to kilograms. */
+        fun toKg(value: Double, unit: WeightUnit): Double {
+            return when (unit) {
+                JIN -> value / 2
+                POUND -> value * 0.45359237
+                STONE -> value * 14 * 0.45359237
+                KILOGRAM -> value
+            }
+        }
+
         fun formatWeight(context: Context, kg: Double, target: WeightUnit): String {
             val convertedWeight = convertWeight(kg, target)
             return formatConvertedWeight(context, convertedWeight, target)
