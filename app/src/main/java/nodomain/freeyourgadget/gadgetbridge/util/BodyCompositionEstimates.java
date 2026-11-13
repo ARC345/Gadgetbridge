@@ -87,4 +87,94 @@ public final class BodyCompositionEstimates {
         return BodyCompositionCalculator.compute(prefsUser.getGender(), age, heightCm, sample.getWeightKg(), sample.getImpedanceOhm());
     }
 
+    /**
+     * Body mass index from a weight and a height.
+     *
+     * @return the BMI, or null if an input is not more than 0
+     */
+    @Nullable
+    public static Double bmi(final double weightKg, final double heightCm) {
+        if (weightKg <= 0 || heightCm <= 0) {
+            return null;
+        }
+        final double heightM = heightCm / 100d;
+        return weightKg / (heightM * heightM);
+    }
+
+    /**
+     * Body fat % by the U.S. Navy circumference method (Hodgdon and Beckett, 1984), with the
+     * constants for centimetres. For men, the waist is measured at the navel; for women, at its
+     * narrowest point, together with the hips.
+     *
+     * @return the body fat %, or null if an input is missing or a log argument is not positive
+     */
+    @Nullable
+    public static Double navyBodyFat(final boolean male, final double heightCm, @Nullable final Double neckCm,
+                                     @Nullable final Double waistCm, @Nullable final Double hipsCm) {
+        if (heightCm <= 0 || !isPositive(neckCm) || !isPositive(waistCm)) {
+            return null;
+        }
+        if (male) {
+            final double girth = waistCm - neckCm;
+            if (girth <= 0) {
+                return null;
+            }
+            return 86.010 * Math.log10(girth) - 70.041 * Math.log10(heightCm) + 30.30;
+        }
+        if (!isPositive(hipsCm)) {
+            return null;
+        }
+        final double girth = waistCm + hipsCm - neckCm;
+        if (girth <= 0) {
+            return null;
+        }
+        return 163.205 * Math.log10(girth) - 97.684 * Math.log10(heightCm) - 104.912;
+    }
+
+    /**
+     * Body fat % from the sum of three skinfolds (Jackson and Pollock, 1978, for men; Jackson,
+     * Pollock and Ward, 1980, for women), with the Siri equation. Men: chest, abdomen and thigh.
+     * Women: triceps, suprailiac and thigh.
+     *
+     * @return the body fat %, or null if an input is not more than 0
+     */
+    @Nullable
+    public static Double skinfoldBodyFat(final boolean male, final int ageYears, final double sumMm) {
+        if (ageYears <= 0 || sumMm <= 0) {
+            return null;
+        }
+        final double density = male
+                ? 1.10938 - 0.0008267 * sumMm + 0.0000016 * sumMm * sumMm - 0.0002574 * ageYears
+                : 1.0994921 - 0.0009929 * sumMm + 0.0000023 * sumMm * sumMm - 0.0001392 * ageYears;
+        if (density <= 0) {
+            return null;
+        }
+        return 495 / density - 450;
+    }
+
+    @Nullable
+    public static Double waistToHip(@Nullable final Double waistCm, @Nullable final Double hipsCm) {
+        if (!isPositive(waistCm) || !isPositive(hipsCm)) {
+            return null;
+        }
+        return waistCm / hipsCm;
+    }
+
+    @Nullable
+    public static Double waistToHeight(@Nullable final Double waistCm, final double heightCm) {
+        if (!isPositive(waistCm) || heightCm <= 0) {
+            return null;
+        }
+        return waistCm / heightCm;
+    }
+
+    /** A calculated body fat % can be impossible for valid inputs, for example a negative value. */
+    public static boolean isPlausibleBodyFat(final double percent) {
+        return percent > 0 && percent < 100;
+    }
+
+    private static boolean isPositive(@Nullable final Double value) {
+        return value != null && value > 0;
+    }
+
 }
