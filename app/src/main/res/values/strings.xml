@@ -6788,4 +6788,18 @@
     <string name="body_measurements_help_triceps_skinfold">Take a vertical fold on the back of the upper arm, midway between the shoulder and the elbow.</string>
     <string name="body_measurements_help_suprailiac_skinfold">Take a diagonal fold just above the front of the hip bone.</string>
     <string name="body_measurements_unit_jin" translatable="false">市斤</string>
+    <string name="body_measurements_derived_bmi">BMI</string>
+    <string name="body_measurements_derived_navy">Body fat (Navy)</string>
+    <string name="body_measurements_derived_skinfold">Body fat (3-site skinfold)</string>
+    <string name="body_measurements_derived_waist_to_hip">Waist-to-hip (at navel)</string>
+    <string name="body_measurements_derived_waist_to_height">Waist-to-height (at navel)</string>
+    <string name="body_measurements_weight_typed">typed weight</string>
+    <string name="body_measurements_weight_scale">scale weight</string>
+    <string name="body_measurements_formula_male">male formula</string>
+    <string name="body_measurements_formula_female">female formula</string>
+    <string name="body_measurements_needs">Needs %1$s</string>
+    <string name="body_measurements_needs_sex">Needs male or female in About you</string>
+    <string name="body_measurements_out_of_range">Out of range</string>
+    <string name="body_measurements_value_with_source">%1$s (%2$s)</string>
+    <string name="body_measurements_derived_line">%1$s: %2$s</string>
 </resources>
