@@ -27,7 +27,6 @@ import nodomain.freeyourgadget.gadgetbridge.devices.GenericWeightSampleProvider
 import nodomain.freeyourgadget.gadgetbridge.devices.TimeSampleProvider
 import nodomain.freeyourgadget.gadgetbridge.entities.DaoSession
 import nodomain.freeyourgadget.gadgetbridge.entities.GenericWeightSample
-import nodomain.freeyourgadget.gadgetbridge.entities.GenericWeightSampleDao
 import nodomain.freeyourgadget.gadgetbridge.impl.GBDevice
 import nodomain.freeyourgadget.gadgetbridge.impl.GBDeviceCandidate
 import nodomain.freeyourgadget.gadgetbridge.model.WeightSample
@@ -35,7 +34,6 @@ import nodomain.freeyourgadget.gadgetbridge.service.DeviceSupport
 import nodomain.freeyourgadget.gadgetbridge.service.devices.scannable.ScannableDeviceSupport
 import nodomain.freeyourgadget.gadgetbridge.util.GB
 import org.slf4j.LoggerFactory
-import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.abs
 

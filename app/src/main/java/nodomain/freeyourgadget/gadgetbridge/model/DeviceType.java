@@ -1278,6 +1278,7 @@ public enum DeviceType {
     COLMI_R10(ColmiR10Coordinator::new),
     COLMI_R12(ColmiR12Coordinator::new),
     H59(H59Coordinator::new),
+    PEBBLE_QORE2(PebbleQore2Coordinator::new),
     COLMI_I28_ULTRA(ColmiI28UltraCoordinator::new),
     COLMI_I31(ColmiI31Coordinator::new),
     COLMI_P10(ColmiP10Coordinator::new),
