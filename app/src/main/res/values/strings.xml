@@ -6808,4 +6808,8 @@
     <string name="body_measurements_pref_enabled_types_summary">Select which measurements the form shows. Hidden values stay stored.</string>
     <string name="body_measurements_unit_centimetres">Centimetres</string>
     <string name="body_measurements_unit_inches">Inches</string>
+    <string name="body_measurements_error_number">Type a number</string>
+    <string name="body_measurements_error_positive">Must be more than 0</string>
+    <string name="body_measurements_error_body_fat">Must be from 0 to 100</string>
+    <string name="body_measurements_error_empty">Type at least one value or a note</string>
 </resources>
