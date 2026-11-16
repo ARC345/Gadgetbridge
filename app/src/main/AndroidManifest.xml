@@ -239,6 +239,10 @@
             android:label="@string/pref_header_auto_export_fit"
             android:parentActivityName=".activities.SettingsActivity" />
         <activity
+            android:name=".activities.bodymeasurements.BodyMeasurementsSettingsActivity"
+            android:label="@string/body_measurements_settings_title"
+            android:parentActivityName=".activities.bodymeasurements.BodyMeasurementsActivity" />
+        <activity
             android:name=".activities.maps.MapsTrackActivity"
             android:label="@string/maps"
             android:parentActivityName=".activities.SettingsActivity" />

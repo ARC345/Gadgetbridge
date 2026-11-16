@@ -6802,4 +6802,10 @@
     <string name="body_measurements_out_of_range">Out of range</string>
     <string name="body_measurements_value_with_source">%1$s (%2$s)</string>
     <string name="body_measurements_derived_line">%1$s: %2$s</string>
+    <string name="body_measurements_settings_title">Body measurement settings</string>
+    <string name="body_measurements_pref_length_unit">Length unit</string>
+    <string name="body_measurements_pref_enabled_types">Enabled measurements</string>
+    <string name="body_measurements_pref_enabled_types_summary">Select which measurements the form shows. Hidden values stay stored.</string>
+    <string name="body_measurements_unit_centimetres">Centimetres</string>
+    <string name="body_measurements_unit_inches">Inches</string>
 </resources>

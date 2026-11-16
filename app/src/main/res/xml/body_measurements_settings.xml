@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <ListPreference
+        android:dialogTitle="@string/body_measurements_pref_length_unit"
+        android:entries="@array/empty_array"
+        android:entryValues="@array/empty_array"
+        android:key="body_measurements_length_unit"
+        android:title="@string/body_measurements_pref_length_unit"
+        app:iconSpaceReserved="false"
+        app:useSimpleSummaryProvider="true" />
+
+    <MultiSelectListPreference
+        android:dialogTitle="@string/body_measurements_pref_enabled_types"
+        android:entries="@array/empty_array"
+        android:entryValues="@array/empty_array"
+        android:key="body_measurements_enabled_types"
+        android:summary="@string/body_measurements_pref_enabled_types_summary"
+        android:title="@string/body_measurements_pref_enabled_types"
+        app:iconSpaceReserved="false" />
+</PreferenceScreen>
