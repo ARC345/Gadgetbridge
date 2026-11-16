@@ -6826,4 +6826,15 @@
     <string name="body_measurements_discard_title">Discard your changes?</string>
     <string name="body_measurements_discard">Discard</string>
     <string name="body_measurements_keep_editing">Keep editing</string>
+    <string name="body_measurements_period_3_months">3 months</string>
+    <string name="body_measurements_period_1_year">1 year</string>
+    <string name="body_measurements_period_all">All</string>
+    <string name="body_measurements_title">Body measurements</string>
+    <string name="body_measurements_add">Add measurement</string>
+    <string name="body_measurements_empty">No measurements yet. Tap + to add one.</string>
+    <string name="body_measurements_chart_empty">No values in this period</string>
+    <string name="body_measurements_more">+%1$d more</string>
+    <string name="body_measurements_delete_title">Delete this measurement?</string>
+    <string name="body_measurements_series_typed">Typed</string>
+    <string name="body_measurements_series_scale">Scale</string>
 </resources>

@@ -239,6 +239,10 @@
             android:label="@string/pref_header_auto_export_fit"
             android:parentActivityName=".activities.SettingsActivity" />
         <activity
+            android:name=".activities.bodymeasurements.BodyMeasurementsActivity"
+            android:label="@string/body_measurements_title"
+            android:parentActivityName=".activities.ControlCenterv2" />
+        <activity
             android:name=".activities.bodymeasurements.BodyMeasurementsSettingsActivity"
             android:label="@string/body_measurements_settings_title"
             android:parentActivityName=".activities.bodymeasurements.BodyMeasurementsActivity" />

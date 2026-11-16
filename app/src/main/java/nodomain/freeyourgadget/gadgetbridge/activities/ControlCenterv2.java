@@ -76,6 +76,7 @@ import java.util.Set;
 
 import nodomain.freeyourgadget.gadgetbridge.GBApplication;
 import nodomain.freeyourgadget.gadgetbridge.R;
+import nodomain.freeyourgadget.gadgetbridge.activities.bodymeasurements.BodyMeasurementsActivity;
 import nodomain.freeyourgadget.gadgetbridge.activities.debug.DebugActivityV2;
 import nodomain.freeyourgadget.gadgetbridge.activities.discovery.DiscoveryActivityV2;
 import nodomain.freeyourgadget.gadgetbridge.activities.welcome.WelcomeActivity;
@@ -604,6 +605,9 @@ public class ControlCenterv2 extends AppCompatActivity
         } else if (itemId == R.id.action_debug) {
             final Intent debugIntent = new Intent(this, DebugActivityV2.class);
             startActivity(debugIntent);
+            return false;
+        } else if (itemId == R.id.action_body_measurements) {
+            startActivity(new Intent(this, BodyMeasurementsActivity.class));
             return false;
         } else if (itemId == R.id.action_data_management) {
             final Intent dbIntent = new Intent(this, DataManagementActivity.class);
