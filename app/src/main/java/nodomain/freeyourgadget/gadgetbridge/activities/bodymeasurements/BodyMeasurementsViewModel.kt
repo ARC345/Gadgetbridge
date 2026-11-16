@@ -20,6 +20,7 @@ package nodomain.freeyourgadget.gadgetbridge.activities.bodymeasurements
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -52,6 +53,7 @@ class BodyMeasurementsViewModel : ViewModel() {
 
     private var selected: BodySeries? = null
     private var period = ChartPeriod.THREE_MONTHS
+    private var loadJob: Job? = null
 
     fun select(series: BodySeries) {
         if (series == selected) {
@@ -76,7 +78,8 @@ class BodyMeasurementsViewModel : ViewModel() {
         val gender = ActivityUser().gender
         val wanted = selected
         val currentPeriod = period
-        viewModelScope.launch {
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
             val loaded = withContext(Dispatchers.IO) { load(nowMillis, units, enabled, gender, wanted, currentPeriod) }
             selected = loaded.selected
             _state.value = loaded
@@ -99,7 +102,7 @@ class BodyMeasurementsViewModel : ViewModel() {
         val current = wanted?.takeIf { it in options } ?: options.firstOrNull() ?: BodySeries.Measured(BodyMeasurementType.WEIGHT)
         val fromMillis = currentPeriod.days?.let { nowMillis - it * 86_400_000L } ?: 0L
         val all = repo.entries(0L, Long.MAX_VALUE)
-        val inPeriod = all.filter { it.timestamp >= fromMillis }.sortedBy { it.timestamp }
+        val inPeriod = all.filter { it.timestamp in fromMillis..nowMillis }.sortedBy { it.timestamp }
 
         var scale = emptyList<ChartPoint>()
         val main: List<ChartPoint> = when (current) {

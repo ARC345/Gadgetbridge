@@ -120,6 +120,13 @@ class BodyMeasurementsActivity : AbstractGBActivity() {
                 chip.isChecked = true
             }
         }
+        val periodGroup = binding.bodyMeasurementsPeriodGroup
+        for (i in 0 until periodGroup.childCount) {
+            val chip = periodGroup.getChildAt(i) as Chip
+            if (chip.tag == state.period && !chip.isChecked) {
+                chip.isChecked = true
+            }
+        }
 
         val mainColor = ContextCompat.getColor(this, R.color.accent)
         val scaleColor = ContextCompat.getColor(this, R.color.chart_weight_body_water)
