@@ -6812,4 +6812,18 @@
     <string name="body_measurements_error_positive">Must be more than 0</string>
     <string name="body_measurements_error_body_fat">Must be from 0 to 100</string>
     <string name="body_measurements_error_empty">Type at least one value or a note</string>
+    <string name="body_measurements_new_title">New measurement</string>
+    <string name="body_measurements_edit_title">Edit measurement</string>
+    <string name="body_measurements_date">Date</string>
+    <string name="body_measurements_time">Time</string>
+    <string name="body_measurements_note">Note</string>
+    <string name="body_measurements_calculated">Calculated</string>
+    <string name="body_measurements_group_weight">Weight</string>
+    <string name="body_measurements_group_circumferences">Circumferences</string>
+    <string name="body_measurements_group_skinfolds">Skinfolds</string>
+    <string name="body_measurements_how_to_measure">How to measure</string>
+    <string name="body_measurements_last_value">Last: %1$s (%2$s)</string>
+    <string name="body_measurements_discard_title">Discard your changes?</string>
+    <string name="body_measurements_discard">Discard</string>
+    <string name="body_measurements_keep_editing">Keep editing</string>
 </resources>

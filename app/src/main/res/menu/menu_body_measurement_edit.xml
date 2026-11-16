@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <item
+        android:id="@+id/body_measurement_save"
+        android:icon="@drawable/ic_save"
+        android:title="@string/save"
+        app:iconTint="?attr/actionmenu_icon_color"
+        app:showAsAction="always" />
+</menu>

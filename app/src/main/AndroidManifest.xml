@@ -243,6 +243,11 @@
             android:label="@string/body_measurements_settings_title"
             android:parentActivityName=".activities.bodymeasurements.BodyMeasurementsActivity" />
         <activity
+            android:name=".activities.bodymeasurements.BodyMeasurementEditActivity"
+            android:label="@string/body_measurements_new_title"
+            android:parentActivityName=".activities.bodymeasurements.BodyMeasurementsActivity"
+            android:windowSoftInputMode="adjustResize" />
+        <activity
             android:name=".activities.maps.MapsTrackActivity"
             android:label="@string/maps"
             android:parentActivityName=".activities.SettingsActivity" />
