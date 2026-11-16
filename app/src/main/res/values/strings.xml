@@ -2422,6 +2422,8 @@
     <string name="devicetype_smaq2oss" translatable="false">SMA-Q2 OSS</string>
     <string name="devicetype_fitpro" translatable="false">FitPro</string>
     <string name="devicetype_nx_wear_b8" translatable="false">Nx Wear B8</string>
+    <string name="devicetype_pebble_qore_vox" translatable="false">Pebble Qore Vox</string>
+    <string name="crpring_pin_rejected">The band did not accept the PIN. Enter the PIN of the Pebble Vox app in the device settings, or unpair the band in that app.</string>
     <string name="devicetype_colacao21" translatable="false">ColaCao 2021</string>
     <string name="devicetype_colacao23" translatable="false">ColaCao 2023</string>
     <string name="devicetype_ak102" translatable="false">AK102</string>

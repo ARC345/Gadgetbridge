@@ -504,6 +504,7 @@ import nodomain.freeyourgadget.gadgetbridge.devices.nothing.EarACoordinator;
 import nodomain.freeyourgadget.gadgetbridge.devices.nothing.EarStickCoordinator;
 import nodomain.freeyourgadget.gadgetbridge.devices.nut.NutCoordinator;
 import nodomain.freeyourgadget.gadgetbridge.devices.nxwear.NxWearB8Coordinator;
+import nodomain.freeyourgadget.gadgetbridge.devices.crpring.PebbleQoreVoxCoordinator;
 import nodomain.freeyourgadget.gadgetbridge.devices.ollee.OlleeDeviceCoordinator;
 import nodomain.freeyourgadget.gadgetbridge.devices.onemoresonoflow.OneMoreSonoFlowCoordinator;
 import nodomain.freeyourgadget.gadgetbridge.devices.onemoresonoflow.OneMoreSonoFlowSECoordinator;
@@ -1275,6 +1276,7 @@ public enum DeviceType {
     CARDO_LS24X(Ls24xDeviceCoordinator.class),
     F8SCALE(F8ScaleCoordinator.class),
     EIGHTBITDO_MICRO(EightBitDoMicroCoordinator.class),
+    PEBBLE_QORE_VOX(PebbleQoreVoxCoordinator.class),
     TEST(TestDeviceCoordinator.class);
 
     private DeviceCoordinator coordinator;
