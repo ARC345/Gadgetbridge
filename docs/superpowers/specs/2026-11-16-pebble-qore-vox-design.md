@@ -130,13 +130,15 @@ structure of other drivers. Other bands with the same SDK can use it later.
 
 ### Connection and init
 
-1. Enable notifications on `fdd3`, `fdd1` and `2a19`. Ask for MTU 512.
-2. Read firmware (`3,3`) and device info (`5,2`).
+1. Enable notifications on `fdd3`, `fdd1` and `2a19`. Ask for MTU 512. Read `2a19`.
+2. Read the firmware version (`3,3`).
 3. PIN: send `{1, n, PIN}`. The PIN comes from the device preference "Auth key". If the
    preference is empty, Gadgetbridge makes an 8-digit PIN and saves it.
    If the reply is not 0, log it and show a toast. Phase 1 does not erase the band.
 4. Send time (`1,1`) and user info (`1,0`) from the Gadgetbridge user profile.
-5. Read battery (`3,6`). Set the device to "initialized".
+5. Set the device to "initialized". A `3,6` battery reply is also accepted if it comes.
+
+A sleep entry with no next entry has no end time. Do not save it. The next fetch gets it.
 
 ### Fetch order
 
