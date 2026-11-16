@@ -76,6 +76,14 @@ class BodyMeasurementEditActivity : AbstractGBActivity() {
         (supportFragmentManager.findFragmentByTag(TAG_TIME) as? MaterialTimePicker)?.let(::attachTimeListener)
 
         lifecycleScope.launch {
+            viewModel.saved.collect { saved ->
+                if (saved) {
+                    setResult(RESULT_OK)
+                    finish()
+                }
+            }
+        }
+        lifecycleScope.launch {
             viewModel.ui.collect { ui -> ui?.let(::render) }
         }
     }
@@ -94,7 +102,7 @@ class BodyMeasurementEditActivity : AbstractGBActivity() {
     private fun render(ui: BodyMeasurementEditViewModel.UiState) {
         if (!built) {
             buildFields(ui.fields)
-            binding.bodyMeasurementNote.setText(ui.note)
+            binding.bodyMeasurementNote.setText(viewModel.currentNote())
             binding.bodyMeasurementNote.doAfterTextChanged { viewModel.onNoteChanged(it?.toString().orEmpty()) }
             built = true
         }
@@ -201,22 +209,24 @@ class BodyMeasurementEditActivity : AbstractGBActivity() {
     private fun attachTimeListener(picker: MaterialTimePicker) {
         picker.addOnPositiveButtonClickListener {
             val zone = ZoneId.systemDefault()
-            val date = Instant.ofEpochMilli(viewModel.currentTimestamp()).atZone(zone).toLocalDate()
+            val current = Instant.ofEpochMilli(viewModel.currentTimestamp()).atZone(zone)
+            if (picker.hour == current.hour && picker.minute == current.minute) {
+                return@addOnPositiveButtonClickListener
+            }
+            val date = current.toLocalDate()
             viewModel.changeTimestamp(BodyMeasurementForm.timestampOf(date, LocalTime.of(picker.hour, picker.minute), zone))
         }
     }
 
     private fun save() {
-        if (saving) {
+        if (saving || viewModel.ui.value == null) {
             return
         }
         saving = true
         lifecycleScope.launch {
             when (val result = viewModel.save()) {
-                is BodyMeasurementForm.Validation.Ok -> {
-                    setResult(RESULT_OK)
-                    finish()
-                }
+                null -> saving = false
+                is BodyMeasurementForm.Validation.Ok -> Unit // the saved flow finishes the activity
                 is BodyMeasurementForm.Validation.FieldErrors -> {
                     result.errors.forEach { (code, messageRes) -> fieldViews[code]?.error = getString(messageRes) }
                     saving = false

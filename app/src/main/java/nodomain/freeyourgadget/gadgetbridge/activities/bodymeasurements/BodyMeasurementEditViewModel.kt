@@ -21,6 +21,8 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -40,7 +42,6 @@ import nodomain.freeyourgadget.gadgetbridge.model.BodyMeasurementUnits
 class BodyMeasurementEditViewModel(private val state: SavedStateHandle) : ViewModel() {
     data class UiState(
         val timestamp: Long,
-        val note: String,
         val fields: List<FieldState>,
         val lastValues: Map<Int, TimedValue>,
         val calculated: List<Pair<DerivedMetric, DerivedResult>>,
@@ -85,8 +86,15 @@ class BodyMeasurementEditViewModel(private val state: SavedStateHandle) : ViewMo
             state[KEY_ORIGINAL_NOTE] = value
         }
 
+    private var reloadJob: Job? = null
+    private val _saved = MutableStateFlow(false)
+
+    /** Becomes true once a save finished; the activity finishes then, even a recreated one. */
+    val saved: StateFlow<Boolean> = _saved.asStateFlow()
+    private var saving = false
+
     init {
-        viewModelScope.launch { load() }
+        reloadJob = viewModelScope.launch { load() }
     }
 
     private suspend fun load() {
@@ -113,14 +121,20 @@ class BodyMeasurementEditViewModel(private val state: SavedStateHandle) : ViewMo
         val ts = timestamp
         val codes = fields.map { it.code }
         val id = entryId
-        withContext(Dispatchers.IO) {
+        val loaded = withContext(Dispatchers.IO) {
             GBApplication.acquireDB().use { db ->
                 val repo = BodyMeasurementRepository(db.daoSession)
-                profile = BodyMeasurementCalculator.profileAt(db.daoSession, ts)
-                scaleWeightKg = repo.scaleWeightOnDay(ts)?.toDouble()
-                lastValues = codes.mapNotNull { code -> repo.latestValue(code, ts, id)?.let { code to it } }.toMap()
+                Triple(
+                    BodyMeasurementCalculator.profileAt(db.daoSession, ts),
+                    repo.scaleWeightOnDay(ts)?.toDouble(),
+                    codes.mapNotNull { code -> repo.latestValue(code, ts, id)?.let { code to it } }.toMap(),
+                )
             }
         }
+        // A cancelled job never gets here, so only the latest reload publishes.
+        profile = loaded.first
+        scaleWeightKg = loaded.second
+        lastValues = loaded.third
         publish()
     }
 
@@ -131,7 +145,7 @@ class BodyMeasurementEditViewModel(private val state: SavedStateHandle) : ViewMo
         val calculated = DerivedMetric.entries
             .filter { it.showsInBox(currentProfile.gender, enabled) }
             .map { it to BodyMeasurementCalculator.calculate(it, values, currentProfile, scaleWeightKg) }
-        _ui.value = UiState(timestamp, note, fields, lastValues, calculated)
+        _ui.value = UiState(timestamp, fields, lastValues, calculated)
     }
 
     fun onTextChanged(code: Int, text: String) {
@@ -147,10 +161,13 @@ class BodyMeasurementEditViewModel(private val state: SavedStateHandle) : ViewMo
     fun changeTimestamp(value: Long) {
         timestamp = value
         refreshUnsavedChanges()
-        viewModelScope.launch { reloadContext() }
+        reloadJob?.cancel()
+        reloadJob = viewModelScope.launch { reloadContext() }
     }
 
     fun currentTimestamp(): Long = timestamp
+
+    fun currentNote(): String = note
 
     private val _hasUnsavedChanges = MutableStateFlow(false)
 
@@ -162,20 +179,34 @@ class BodyMeasurementEditViewModel(private val state: SavedStateHandle) : ViewMo
             fields.any { it.isDirty } || note.trim() != originalNote.trim() || timestamp != originalTimestamp
     }
 
-    /** Validates and, if the form is valid, saves. */
-    suspend fun save(): BodyMeasurementForm.Validation {
-        val result = BodyMeasurementForm.validate(fields, existing.keys, note, units)
-        if (result is BodyMeasurementForm.Validation.Ok) {
-            val id = entryId
-            val ts = timestamp
-            val text = note
-            withContext(Dispatchers.IO) {
-                GBApplication.acquireDB().use { db ->
-                    BodyMeasurementRepository(db.daoSession).save(id, ts, text, result.upserts, result.clearedTypes)
-                }
-            }
+    /**
+     * Validates and, if the form is valid, saves. The write runs in [viewModelScope], so a rotation
+     * does not cancel it. Returns null while the editor is not loaded or a save is already running.
+     */
+    suspend fun save(): BodyMeasurementForm.Validation? {
+        if (saving || _ui.value == null) {
+            return null
         }
-        return result
+        saving = true
+        val deferred = viewModelScope.async {
+            val result = BodyMeasurementForm.validate(fields, existing.keys, note, units)
+            if (result is BodyMeasurementForm.Validation.Ok) {
+                val id = entryId
+                val ts = timestamp
+                val text = note
+                withContext(Dispatchers.IO) {
+                    GBApplication.acquireDB().use { db ->
+                        BodyMeasurementRepository(db.daoSession).save(id, ts, text, result.upserts, result.clearedTypes)
+                    }
+                }
+                _saved.value = true
+            } else {
+                saving = false
+            }
+            result
+        }
+        deferred.invokeOnCompletion { if (it != null) saving = false }
+        return deferred.await()
     }
 
     private companion object {
