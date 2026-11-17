@@ -16,8 +16,6 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>. */
 package nodomain.freeyourgadget.gadgetbridge.devices.crpring
 
-import de.greenrobot.dao.AbstractDao
-import de.greenrobot.dao.Property
 import nodomain.freeyourgadget.gadgetbridge.R
 import nodomain.freeyourgadget.gadgetbridge.devices.AbstractBLEDeviceCoordinator
 import nodomain.freeyourgadget.gadgetbridge.devices.DeviceCoordinator
@@ -25,11 +23,7 @@ import nodomain.freeyourgadget.gadgetbridge.devices.GenericSpo2SampleProvider
 import nodomain.freeyourgadget.gadgetbridge.devices.SampleProvider
 import nodomain.freeyourgadget.gadgetbridge.devices.TimeSampleProvider
 import nodomain.freeyourgadget.gadgetbridge.entities.AbstractActivitySample
-import nodomain.freeyourgadget.gadgetbridge.entities.CrpRingStepsSampleDao
 import nodomain.freeyourgadget.gadgetbridge.entities.DaoSession
-import nodomain.freeyourgadget.gadgetbridge.entities.GenericHeartRateSampleDao
-import nodomain.freeyourgadget.gadgetbridge.entities.GenericSleepStageSampleDao
-import nodomain.freeyourgadget.gadgetbridge.entities.GenericSpo2SampleDao
 import nodomain.freeyourgadget.gadgetbridge.impl.GBDevice
 import nodomain.freeyourgadget.gadgetbridge.model.Spo2Sample
 import nodomain.freeyourgadget.gadgetbridge.service.DeviceSupport
@@ -37,21 +31,12 @@ import nodomain.freeyourgadget.gadgetbridge.service.devices.crpring.CrpRingDevic
 
 /** Devices that use the MoYoung "CRP ring" SDK protocol (service fdda). */
 abstract class AbstractCrpRingCoordinator : AbstractBLEDeviceCoordinator() {
-    override fun getDeviceSupportClass(device: GBDevice): Class<out DeviceSupport> =
-        CrpRingDeviceSupport::class.java
+    override fun createDeviceSupport(device: GBDevice): DeviceSupport = CrpRingDeviceSupport()
 
     override fun getDeviceKind(device: GBDevice): DeviceCoordinator.DeviceKind =
         DeviceCoordinator.DeviceKind.FITNESS_BAND
 
     override fun getDefaultIconResource(): Int = R.drawable.ic_device_miband6
-
-    override fun getAllDeviceDao(session: DaoSession): MutableMap<AbstractDao<*, *>, Property> =
-        hashMapOf<AbstractDao<*, *>, Property>(
-            session.crpRingStepsSampleDao to CrpRingStepsSampleDao.Properties.DeviceId,
-            session.genericHeartRateSampleDao to GenericHeartRateSampleDao.Properties.DeviceId,
-            session.genericSpo2SampleDao to GenericSpo2SampleDao.Properties.DeviceId,
-            session.genericSleepStageSampleDao to GenericSleepStageSampleDao.Properties.DeviceId,
-        )
 
     override fun getSampleProvider(device: GBDevice, session: DaoSession): SampleProvider<out AbstractActivitySample> =
         CrpRingActivitySampleProvider(device, session)

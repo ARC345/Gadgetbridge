@@ -68,7 +68,7 @@ class CrpRingDeviceSupport : AbstractBTLESingleDeviceSupport(LOG) {
 
     init {
         addSupportedService(CrpRingConstants.UUID_SERVICE)
-        addSupportedService(GattService.UUID_SERVICE_BATTERY_SERVICE)
+        addSupportedService(GattService.SERVICE_BATTERY.uuid)
     }
 
     override fun useAutoConnect(): Boolean = false
@@ -78,8 +78,8 @@ class CrpRingDeviceSupport : AbstractBTLESingleDeviceSupport(LOG) {
         builder.requestMtu(CrpRingConstants.MTU)
         builder.notify(CrpRingConstants.UUID_CHARACTERISTIC_NOTIFY, true)
         builder.notify(CrpRingConstants.UUID_CHARACTERISTIC_STEPS, true)
-        builder.notify(GattCharacteristic.UUID_CHARACTERISTIC_BATTERY_LEVEL, true)
-        builder.read(GattCharacteristic.UUID_CHARACTERISTIC_BATTERY_LEVEL)
+        builder.notify(GattCharacteristic.CHARACTERISTIC_BATTERY_LEVEL.uuid, true)
+        builder.read(GattCharacteristic.CHARACTERISTIC_BATTERY_LEVEL.uuid)
         write(builder, CrpRingCommands.firmwareVersion())
         write(builder, CrpRingCommands.sendPin(getOrCreatePin()))
         write(builder, CrpRingCommands.setTime(System.currentTimeMillis(), ZoneId.systemDefault()))
@@ -112,7 +112,7 @@ class CrpRingDeviceSupport : AbstractBTLESingleDeviceSupport(LOG) {
                 LOG.debug("Live steps: {}", GB.hexdump(value))
                 return true
             }
-            GattCharacteristic.UUID_CHARACTERISTIC_BATTERY_LEVEL -> {
+            GattCharacteristic.CHARACTERISTIC_BATTERY_LEVEL.uuid -> {
                 CrpRingParsers.firstByte(value)?.let { reportBattery(it) }
                 return true
             }
@@ -127,7 +127,7 @@ class CrpRingDeviceSupport : AbstractBTLESingleDeviceSupport(LOG) {
         status: Int,
     ): Boolean {
         if (super.onCharacteristicRead(gatt, characteristic, value, status)) return true
-        if (characteristic.uuid == GattCharacteristic.UUID_CHARACTERISTIC_BATTERY_LEVEL && status == BluetoothGatt.GATT_SUCCESS) {
+        if (characteristic.uuid == GattCharacteristic.CHARACTERISTIC_BATTERY_LEVEL.uuid && status == BluetoothGatt.GATT_SUCCESS) {
             CrpRingParsers.firstByte(value)?.let { reportBattery(it) }
             return true
         }
