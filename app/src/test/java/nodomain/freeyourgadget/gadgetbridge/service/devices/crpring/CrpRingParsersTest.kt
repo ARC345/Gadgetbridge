@@ -165,4 +165,38 @@ class CrpRingParsersTest {
             CrpRingParsers.sleepStages(sleep, now, kolkata)
         )
     }
+
+    @Test
+    fun sleepSessionTimesReadUint32Values() {
+        assertEquals(listOf(0L, 0x12345678L), CrpRingParsers.sleepSessionTimes(bytes(0, 0, 0, 0, 0x78, 0x56, 0x34, 0x12)))
+        assertNull(CrpRingParsers.sleepSessionTimes(bytes(1, 2, 3)))
+    }
+
+    @Test
+    fun sleepDetailsReadIdTypeStartAndEnd() {
+        val payload = bytes(3, 1, 0x10, 0, 0, 0, 0x20, 0, 0, 0) + ByteArray(12)
+        assertEquals(CrpRingSleepDetails(3, 1, 0x10L, 0x20L), CrpRingParsers.sleepDetails(payload))
+        assertNull(CrpRingParsers.sleepDetails(bytes(3, 1, 0)))
+    }
+
+    @Test
+    fun sessionStagesStartOnTheSessionDate() {
+        // Session starts 2026-11-14 23:00 local; the entries have no date of their own.
+        val start = ms("2026-11-14T17:30:00Z")
+        val entries = listOf(CrpRingSleepEntry(1, 23, 0), CrpRingSleepEntry(2, 1, 0), CrpRingSleepEntry(0, 6, 0))
+        assertEquals(
+            listOf(
+                CrpRingSleepStage(start, 120, CrpRingConstants.SLEEP_LIGHT),
+                CrpRingSleepStage(ms("2026-11-14T19:30:00Z"), 300, CrpRingConstants.SLEEP_DEEP),
+            ),
+            CrpRingParsers.sessionStages(entries, start, kolkata)
+        )
+    }
+
+    @Test
+    fun sessionCommands() {
+        assertArrayEquals(CrpRingFrame.build(7, 4), CrpRingCommands.sleepSessions())
+        assertArrayEquals(CrpRingFrame.build(7, 5, bytes(2)), CrpRingCommands.sleepDetails(2))
+        assertArrayEquals(CrpRingFrame.build(7, 6, bytes(2)), CrpRingCommands.sleepSessionStages(2))
+    }
 }

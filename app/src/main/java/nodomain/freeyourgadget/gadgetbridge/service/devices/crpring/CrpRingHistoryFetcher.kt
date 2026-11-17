@@ -43,13 +43,22 @@ class CrpRingHistoryFetcher(
         const val MAX_CONSECUTIVE_TIMEOUTS = 3
     }
 
-    private class Step(val request: ByteArray, val command: Int, val day: Int?, val page: Int?) {
-        val description: String get() = "command=$command day=$day page=$page"
+    private class Step(
+        val request: ByteArray,
+        val command: Int,
+        val day: Int?,
+        val page: Int?,
+        val group: Int = CrpRingConstants.GROUP_QUERY,
+        val sessionId: Int? = null,
+    ) {
+        val description: String get() = "group=$group command=$command day=$day page=$page session=$sessionId"
 
         fun matches(message: CrpRingMessage): Boolean {
-            if (message.group != CrpRingConstants.GROUP_QUERY || message.command != command) return false
+            if (message.group != group || message.command != command) return false
             val payload = message.payload
             if (day != null && (payload.isEmpty() || (payload[0].toInt() and 0xFF) != day)) return false
+            if (command == CrpRingConstants.CMD_SLEEP_DETAILS && group == CrpRingConstants.GROUP_SLEEP &&
+                (payload.isEmpty() || (payload[0].toInt() and 0xFF) != sessionId)) return false
             if (page != null && (payload.size < 2 || (payload[1].toInt() and 0xFF) != page)) return false
             return true
         }
@@ -59,7 +68,8 @@ class CrpRingHistoryFetcher(
     private val skippedSteps = mutableListOf<String>()
     val skipped: List<String> get() = skippedSteps
 
-    private val steps: List<Step> = buildSteps()
+    private val steps: MutableList<Step> = buildSteps()
+    private val sessionDetails = HashMap<Int, CrpRingSleepDetails>()
     private var index = -1
     private val pageZeroSize = HashMap<Pair<Int, Int>, Int>()
     private var consecutiveTimeouts = 0
@@ -88,6 +98,12 @@ class CrpRingHistoryFetcher(
     fun onTimeout() {
         val step = current ?: return
         skippedSteps.add(step.description)
+        if (step.group == CrpRingConstants.GROUP_SLEEP && step.command == CrpRingConstants.CMD_SLEEP_SESSIONS) {
+            // No session list: the band may only know the older daily sleep command.
+            insertNext((days - 1 downTo 0).map { day ->
+                Step(CrpRingCommands.sleep(day), CrpRingConstants.CMD_QUERY_SLEEP, day, null)
+            })
+        }
         consecutiveTimeouts++
         if (consecutiveTimeouts >= MAX_CONSECUTIVE_TIMEOUTS) {
             abortedAfterTimeouts = true
@@ -107,11 +123,14 @@ class CrpRingHistoryFetcher(
         current?.let { send(it.request) }
     }
 
-    private fun buildSteps(): List<Step> {
+    private fun insertNext(newSteps: List<Step>) {
+        steps.addAll(index + 1, newSteps)
+    }
+
+    private fun buildSteps(): MutableList<Step> {
         val list = ArrayList<Step>()
         for (day in days - 1 downTo 0) {
             list.add(Step(CrpRingCommands.stepsDetails(day), CrpRingConstants.CMD_QUERY_STEPS_DETAILS, day, null))
-            list.add(Step(CrpRingCommands.sleep(day), CrpRingConstants.CMD_QUERY_SLEEP, day, null))
             for (page in 0..1) {
                 list.add(Step(CrpRingCommands.timedHeartRate(day, page), CrpRingConstants.CMD_QUERY_TIMED_HEART_RATE, day, page))
             }
@@ -119,12 +138,21 @@ class CrpRingHistoryFetcher(
                 list.add(Step(CrpRingCommands.timedSpo2(day, page), CrpRingConstants.CMD_QUERY_TIMED_SPO2, day, page))
             }
         }
+        list.add(Step(CrpRingCommands.sleepSessions(), CrpRingConstants.CMD_SLEEP_SESSIONS, null, null, CrpRingConstants.GROUP_SLEEP))
         list.add(Step(CrpRingCommands.manualHeartRate(), CrpRingConstants.CMD_QUERY_MANUAL_HEART_RATE, null, null))
         list.add(Step(CrpRingCommands.manualSpo2(), CrpRingConstants.CMD_QUERY_MANUAL_SPO2, null, null))
         return list
     }
 
     private fun consume(step: Step, payload: ByteArray) {
+        if (step.group == CrpRingConstants.GROUP_SLEEP) {
+            when (step.command) {
+                CrpRingConstants.CMD_SLEEP_SESSIONS -> consumeSessions(payload)
+                CrpRingConstants.CMD_SLEEP_DETAILS -> consumeDetails(payload)
+                CrpRingConstants.CMD_SLEEP_SESSION_STAGES -> consumeSessionStages(step.sessionId, payload)
+            }
+            return
+        }
         when (step.command) {
             CrpRingConstants.CMD_QUERY_STEPS_DETAILS -> consumeSteps(payload)
             CrpRingConstants.CMD_QUERY_SLEEP -> consumeSleep(payload)
@@ -146,6 +174,35 @@ class CrpRingHistoryFetcher(
             val timestamp = start + slot * CrpRingConstants.STEPS_SLOT_MINUTES * 60_000L
             if (steps > 0 && timestamp <= nowMillis) result.steps.add(CrpRingValueSample(timestamp, steps))
         }
+    }
+
+    private fun consumeSessions(payload: ByteArray) {
+        val times = CrpRingParsers.sleepSessionTimes(payload) ?: return
+        // As in the vendor app, a time of one day or less marks an empty session slot.
+        val ids = times.indices.filter { times[it] > 86_400L }
+        insertNext(ids.map { id ->
+            Step(CrpRingCommands.sleepDetails(id), CrpRingConstants.CMD_SLEEP_DETAILS, null, null, CrpRingConstants.GROUP_SLEEP, id)
+        })
+    }
+
+    private fun consumeDetails(payload: ByteArray) {
+        val details = CrpRingParsers.sleepDetails(payload) ?: return
+        // Naps have no stage list; phase 1 does not store them.
+        if (details.type != CrpRingConstants.SLEEP_TYPE_LONG) return
+        sessionDetails[details.id] = details
+        insertNext(listOf(Step(
+            CrpRingCommands.sleepSessionStages(details.id), CrpRingConstants.CMD_SLEEP_SESSION_STAGES,
+            null, null, CrpRingConstants.GROUP_SLEEP, details.id
+        )))
+    }
+
+    private fun consumeSessionStages(sessionId: Int?, payload: ByteArray) {
+        val details = sessionDetails[sessionId ?: return] ?: return
+        val sleep = CrpRingParsers.sleep(payload) ?: return
+        val start = CrpRingTime.fromDeviceSeconds(details.startDeviceSeconds, zone)
+        CrpRingParsers.sessionStages(sleep.entries, start, zone)
+            .filter { it.startMillis <= nowMillis }
+            .forEach { result.sleep.add(it) }
     }
 
     private fun consumeSleep(payload: ByteArray) {

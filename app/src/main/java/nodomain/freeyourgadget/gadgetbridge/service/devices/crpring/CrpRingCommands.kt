@@ -63,6 +63,12 @@ object CrpRingCommands {
         query(CrpRingConstants.CMD_QUERY_TIMED_HEART_RATE, day.toByte(), page.toByte())
     fun timedSpo2(day: Int, page: Int): ByteArray =
         query(CrpRingConstants.CMD_QUERY_TIMED_SPO2, day.toByte(), page.toByte())
+    fun sleepSessions(): ByteArray =
+        CrpRingFrame.build(CrpRingConstants.GROUP_SLEEP, CrpRingConstants.CMD_SLEEP_SESSIONS)
+    fun sleepDetails(id: Int): ByteArray =
+        CrpRingFrame.build(CrpRingConstants.GROUP_SLEEP, CrpRingConstants.CMD_SLEEP_DETAILS, byteArrayOf(id.toByte()))
+    fun sleepSessionStages(id: Int): ByteArray =
+        CrpRingFrame.build(CrpRingConstants.GROUP_SLEEP, CrpRingConstants.CMD_SLEEP_SESSION_STAGES, byteArrayOf(id.toByte()))
     fun manualHeartRate(): ByteArray = query(CrpRingConstants.CMD_QUERY_MANUAL_HEART_RATE)
     fun manualSpo2(): ByteArray = query(CrpRingConstants.CMD_QUERY_MANUAL_SPO2)
 
