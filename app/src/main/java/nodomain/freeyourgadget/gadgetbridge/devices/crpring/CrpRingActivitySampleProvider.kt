@@ -47,6 +47,10 @@ class CrpRingActivitySampleProvider(
             GenericActivitySample().also {
                 it.provider = this
                 it.timestamp = timestamp
+                // The band was worn when it counted steps or measured the heart rate. Without this,
+                // the kind stays NOT_MEASURED and charts such as "Speed zones" skip the sample.
+                // The sleep overlay below sets the sleep kinds.
+                it.rawKind = ActivityKind.ACTIVITY.code
             }
         }
 

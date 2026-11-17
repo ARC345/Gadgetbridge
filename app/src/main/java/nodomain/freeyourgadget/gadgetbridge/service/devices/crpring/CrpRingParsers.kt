@@ -24,6 +24,7 @@ data class CrpRingPage(val day: Int, val page: Int, val values: List<Int>)
 data class CrpRingTimedValue(val deviceSeconds: Long, val value: Int)
 data class CrpRingSleepEntry(val stage: Int, val hour: Int, val minute: Int)
 data class CrpRingSleep(val day: Int, val entries: List<CrpRingSleepEntry>)
+data class CrpRingSleepDetails(val id: Int, val type: Int, val startDeviceSeconds: Long, val endDeviceSeconds: Long)
 data class CrpRingSleepStage(val startMillis: Long, val durationMinutes: Int, val stage: Int)
 
 data class CrpRingAuthResult(val operation: Int, val result: Int) {
@@ -72,10 +73,29 @@ object CrpRingParsers {
      */
     fun sleepStages(sleep: CrpRingSleep, nowMillis: Long, zone: ZoneId): List<CrpRingSleepStage> {
         val entries = sleep.entries
+        if (entries.isEmpty()) return emptyList()
+        val anchor = Instant.ofEpochMilli(nowMillis).atZone(zone).toLocalDate().minusDays(sleep.day.toLong())
+        return stagesFrom(entries, if (entries[0].hour >= 12) anchor.minusDays(1) else anchor, zone)
+    }
+
+    /**
+     * Stages of one sleep session (7,6). The entries have no date, so the first entry is put
+     * on the date of the session start ([startMillis], from 7,5).
+     */
+    fun sessionStages(entries: List<CrpRingSleepEntry>, startMillis: Long, zone: ZoneId): List<CrpRingSleepStage> {
+        if (entries.isEmpty() || entries[0].hour > 23 || entries[0].minute > 59) return emptyList()
+        val start = Instant.ofEpochMilli(startMillis).atZone(zone)
+        var date = start.toLocalDate()
+        val first = date.atTime(entries[0].hour, entries[0].minute).atZone(zone).toInstant().toEpochMilli()
+        if (first > startMillis + 12 * 3_600_000L) date = date.minusDays(1)
+        if (first < startMillis - 12 * 3_600_000L) date = date.plusDays(1)
+        return stagesFrom(entries, date, zone)
+    }
+
+    private fun stagesFrom(entries: List<CrpRingSleepEntry>, firstDate: java.time.LocalDate, zone: ZoneId): List<CrpRingSleepStage> {
         if (entries.size < 2) return emptyList()
         if (entries.any { it.hour > 23 || it.minute > 59 }) return emptyList()
-        val anchor = Instant.ofEpochMilli(nowMillis).atZone(zone).toLocalDate().minusDays(sleep.day.toLong())
-        var date = if (entries[0].hour >= 12) anchor.minusDays(1) else anchor
+        var date = firstDate
         var previousHour = -1
         val starts = entries.map { entry ->
             // As in the vendor app: only a lower hour moves to the next date. A clock time a few
@@ -90,6 +110,18 @@ object CrpRingParsers {
             if (duration > 0) stages.add(CrpRingSleepStage(starts[i], duration, entries[i].stage))
         }
         return stages
+    }
+
+    /** 7,4: [device timestamp u32 * n], one start time for each sleep session; the index is the session ID. */
+    fun sleepSessionTimes(payload: ByteArray): List<Long>? {
+        if (payload.size % 4 != 0) return null
+        return (payload.indices step 4).map { u32(payload, it) }
+    }
+
+    /** 7,5: [id, type, start u32, end u32, sleep time f32, efficiency f32, score f32]. */
+    fun sleepDetails(payload: ByteArray): CrpRingSleepDetails? {
+        if (payload.size < 10) return null
+        return CrpRingSleepDetails(u8(payload, 0), u8(payload, 1), u32(payload, 2), u32(payload, 6))
     }
 
     fun text(payload: ByteArray): String = String(payload, Charsets.UTF_8).trimEnd('\u0000').trim()

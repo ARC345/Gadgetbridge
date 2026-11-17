@@ -33,6 +33,7 @@ object CrpRingConstants {
     const val GROUP_SET = 1
     const val GROUP_QUERY = 2
     const val GROUP_SYSTEM = 3
+    const val GROUP_SLEEP = 7
     const val GROUP_ACTION = 9
 
     // Group 1
@@ -54,6 +55,11 @@ object CrpRingConstants {
     const val CMD_FIRMWARE_VERSION = 3
     const val CMD_BATTERY = 6
 
+    // Group 7: sleep sessions (used when the band runs the GoMore algorithm; 2,14 is then not answered)
+    const val CMD_SLEEP_SESSIONS = 4
+    const val CMD_SLEEP_DETAILS = 5
+    const val CMD_SLEEP_SESSION_STAGES = 6
+
     // Group 9
     const val CMD_FIND_DEVICE = 2
 
@@ -66,6 +72,9 @@ object CrpRingConstants {
     const val SLEEP_LIGHT = 1
     const val SLEEP_DEEP = 2
     const val SLEEP_REM = 3
+
+    const val SLEEP_TYPE_LONG = 1
+    const val SLEEP_TYPE_NAP = 2
 
     const val GENDER_MALE = 0
     const val GENDER_FEMALE = 1
