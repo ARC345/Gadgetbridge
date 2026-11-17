@@ -36,6 +36,27 @@ class CrpRingRecordingDownloaderTest {
     private fun info(name: String, size: Int) = reply(5, bytes(2) + le32(size) + name15(name))
     private fun crcResult(name: String, result: Int) = reply(5, bytes(3, result) + name15(name))
     private fun storage(has: Boolean) = reply(11, bytes(if (has) 1 else 0))
+    private fun mapping(remaining: Int, vararg segments: Triple<Int, Int, String>) =
+        reply(5, bytes(5, segments.size, 0, remaining, 0) +
+            segments.fold(ByteArray(0)) { acc, s -> acc + le32(s.first) + le32(s.second) + name15(s.third) })
+    private fun notFound() = reply(5, bytes(5, 0xFF, 0xFF, 0xFF, 0xFF))
+
+    /** Starts the downloader on a band without file storage (stream-only, as the Qore Vox). */
+    private fun startedStreamOnly() = downloader().also {
+        it.start()
+        assertTrue(it.handle(storage(false)))
+        assertArrayEquals(CrpRingRecordingCommands.queryState(), sent.last())
+        assertTrue(it.handle(state(0)))
+    }
+
+    /** Answers one full transfer of [data] for the band file [name]. */
+    private fun transfer(d: CrpRingRecordingDownloader, name: String, data: ByteArray) {
+        assertArrayEquals(CrpRingRecordingCommands.querySize(name), sent.last())
+        assertTrue(d.handle(size(name, data.size)))
+        d.onData(data)
+        assertArrayEquals(CrpRingRecordingCommands.sendCrc(name, CrpRingCrc16.compute(data)), sent.last())
+        assertTrue(d.handle(crcResult(name, 1)))
+    }
     private fun state(state: Int) = reply(0, bytes(state, 0, 0, 0, 0, 0, 0, 0, 0))
 
     private fun downloader(done: Set<String> = emptySet()) = CrpRingRecordingDownloader(done) { sent.add(it) }
@@ -58,15 +79,6 @@ class CrpRingRecordingDownloaderTest {
         assertArrayEquals(CrpRingRecordingCommands.listFiles(), sent.last())
     }
 
-    @Test
-    fun noStorageSkipsTheDownload() {
-        val d = downloader()
-        d.start()
-        d.handle(storage(false))
-        assertTrue(d.isFinished)
-        assertNotNull(d.skipReason)
-        assertEquals(1, sent.size)
-    }
 
     @Test
     fun recordingInProgressSkipsTheDownload() {
@@ -215,5 +227,78 @@ class CrpRingRecordingDownloaderTest {
         d.handle(list("A.opus"))
         assertFalse(d.handle(size("B.opus", 10)))
         assertFalse(d.handle(CrpRingMessage(2, 18, bytes(0))))
+    }
+
+    @Test
+    fun streamOnlyBandStillListsFiles() {
+        startedStreamOnly()
+        assertArrayEquals(CrpRingRecordingCommands.listFiles(), sent.last())
+    }
+
+    @Test
+    fun streamOnlyMapsAndJoinsSegmentsInFrameOrder() {
+        val d = startedStreamOnly()
+        d.handle(list("1795000000.opus"))
+        assertArrayEquals(CrpRingRecordingCommands.queryFileMapping("1795000000.opus"), sent.last())
+        // Segments arrive out of frame order: SEG2 holds frames 100..149, SEG1 holds 0..99.
+        assertTrue(d.handle(mapping(0, Triple(100, 149, "SEG2"), Triple(0, 99, "SEG1"))))
+        val first = ByteArray(4000) { 1 }
+        val second = ByteArray(2000) { 2 }
+        transfer(d, "SEG1", first)
+        transfer(d, "SEG2", second)
+        assertTrue(d.isFinished)
+        assertEquals(1, d.finished.size)
+        assertEquals("1795000000.opus", d.finished[0].name)
+        assertArrayEquals(first + second, d.finished[0].data)
+    }
+
+    @Test
+    fun mappingOverSeveralPages() {
+        val d = startedStreamOnly()
+        d.handle(list("A.opus"))
+        val before = sent.size
+        assertTrue(d.handle(mapping(1, Triple(0, 9, "SEG1"))))
+        assertEquals(before, sent.size)
+        assertTrue(d.handle(mapping(0, Triple(10, 19, "SEG2"))))
+        assertArrayEquals(CrpRingRecordingCommands.querySize("SEG1"), sent.last())
+    }
+
+    @Test
+    fun mappingNotFoundFailsTheNoteForNow() {
+        val d = startedStreamOnly()
+        d.handle(list("A.opus", "B.opus"))
+        assertTrue(d.handle(notFound()))
+        assertEquals(listOf("A.opus"), d.failed)
+        assertArrayEquals(CrpRingRecordingCommands.queryFileMapping("B.opus"), sent.last())
+    }
+
+    @Test
+    fun invalidSegmentsAreIgnored() {
+        val d = startedStreamOnly()
+        d.handle(list("A.opus"))
+        d.handle(mapping(0, Triple(-1, -1, "BAD"), Triple(0, 9, "SEG1")))
+        assertArrayEquals(CrpRingRecordingCommands.querySize("SEG1"), sent.last())
+    }
+
+    @Test
+    fun aFailedSegmentFailsTheWholeNote() {
+        val d = startedStreamOnly()
+        d.handle(list("A.opus"))
+        d.handle(mapping(0, Triple(0, 9, "SEG1"), Triple(10, 19, "SEG2")))
+        d.handle(size("SEG1", 4))
+        d.onData(bytes(1, 2, 3, 4))
+        d.handle(crcResult("SEG1", 0))
+        assertTrue(d.finished.isEmpty())
+        assertEquals(listOf("A.opus"), d.failed)
+        assertTrue(d.isFinished)
+    }
+
+    @Test
+    fun mappingTimeoutFailsTheNote() {
+        val d = startedStreamOnly()
+        d.handle(list("A.opus"))
+        d.onTimeout()
+        assertEquals(listOf("A.opus"), d.failed)
+        assertTrue(d.isFinished)
     }
 }

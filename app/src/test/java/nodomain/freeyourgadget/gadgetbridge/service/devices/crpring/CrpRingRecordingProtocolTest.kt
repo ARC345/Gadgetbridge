@@ -97,4 +97,16 @@ class CrpRingRecordingProtocolTest {
         assertEquals("voice-note", CrpRingRecordingParsers.safeFileName(".."))
         assertEquals("voice-note", CrpRingRecordingParsers.safeFileName(""))
     }
+
+    @Test
+    fun fileMappingPage() {
+        val payload = bytes(5, 1, 0, 2, 0, 10, 0, 0, 0, 20, 0, 0, 0) + name15("REAL1")
+        val page = CrpRingRecordingParsers.fileMappingPage(payload)!!
+        assertEquals(listOf(CrpRingSegment(10, 20, "REAL1")), page.segments)
+        assertEquals(2, page.remaining)
+        assertEquals(false, page.notFound)
+        assertEquals(true, CrpRingRecordingParsers.fileMappingPage(bytes(5, 0xFF, 0xFF, 0xFF, 0xFF))!!.notFound)
+        assertNull(CrpRingRecordingParsers.fileMappingPage(bytes(5, 1)))
+        assertArrayEquals(CrpRingFrame.build(10, 5, bytes(5) + name15("A")), CrpRingRecordingCommands.queryFileMapping("A"))
+    }
 }
