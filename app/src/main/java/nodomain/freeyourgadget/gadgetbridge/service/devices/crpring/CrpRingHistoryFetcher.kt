@@ -38,6 +38,11 @@ class CrpRingHistoryFetcher(
     private val days: Int = CrpRingConstants.HISTORY_DAYS,
     private val send: (ByteArray) -> Unit,
 ) {
+    companion object {
+        /** A band that does not answer this many steps in a row is not answering at all. */
+        const val MAX_CONSECUTIVE_TIMEOUTS = 3
+    }
+
     private class Step(val request: ByteArray, val command: Int, val day: Int?, val page: Int?) {
         val description: String get() = "command=$command day=$day page=$page"
 
@@ -57,6 +62,11 @@ class CrpRingHistoryFetcher(
     private val steps: List<Step> = buildSteps()
     private var index = -1
     private val pageZeroSize = HashMap<Pair<Int, Int>, Int>()
+    private var consecutiveTimeouts = 0
+
+    /** True if the fetch stopped because the band did not answer [MAX_CONSECUTIVE_TIMEOUTS] steps in a row. */
+    var abortedAfterTimeouts = false
+        private set
 
     val isFinished: Boolean get() = index >= steps.size
     private val current: Step? get() = steps.getOrNull(index)
@@ -69,14 +79,27 @@ class CrpRingHistoryFetcher(
     fun handle(message: CrpRingMessage): Boolean {
         val step = current ?: return false
         if (!step.matches(message)) return false
+        consecutiveTimeouts = 0
         consume(step, message.payload)
         advance()
         return true
     }
 
     fun onTimeout() {
-        current?.let { skippedSteps.add(it.description) }
+        val step = current ?: return
+        skippedSteps.add(step.description)
+        consecutiveTimeouts++
+        if (consecutiveTimeouts >= MAX_CONSECUTIVE_TIMEOUTS) {
+            abortedAfterTimeouts = true
+            index = steps.size
+            return
+        }
         advance()
+    }
+
+    /** Stops the fetch, for example when the connection drops. Nothing more is sent. */
+    fun cancel() {
+        index = steps.size
     }
 
     private fun advance() {
