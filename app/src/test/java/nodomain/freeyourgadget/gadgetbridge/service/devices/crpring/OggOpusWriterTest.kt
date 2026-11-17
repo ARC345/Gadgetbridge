@@ -90,4 +90,12 @@ class OggOpusWriterTest {
         val p = pages(OggOpusWriter.fromRawPackets(ByteArray(40 * 2 + 7), 40, 16000, 1))
         assertEquals(80, p[2].body.size)
     }
+
+    @Test
+    fun streamingWriteMatchesTheByteArrayVersion() {
+        val packets = ByteArray(40 * 120 + 5) { (it * 3).toByte() }
+        val out = java.io.ByteArrayOutputStream()
+        OggOpusWriter.write(packets, 40, 16000, 1, out)
+        assertArrayEquals(OggOpusWriter.fromRawPackets(packets, 40, 16000, 1), out.toByteArray())
+    }
 }

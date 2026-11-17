@@ -45,6 +45,8 @@ import nodomain.freeyourgadget.gadgetbridge.util.GB
 import org.slf4j.LoggerFactory
 import java.io.Serializable
 import java.time.ZoneId
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.random.Random
 
 /** The broadcast needs a Serializable sample; the database entity is not Serializable. */
@@ -68,7 +70,9 @@ class CrpRingDeviceSupport : AbstractBTLESingleDeviceSupport(LOG) {
     private val handler = Handler(Looper.getMainLooper())
     private var fetcher: CrpRingHistoryFetcher? = null
     private var downloader: CrpRingRecordingDownloader? = null
-    private var savedVoiceNotes = 0
+    private val savedVoiceNotes = AtomicInteger()
+    /** Saving a note (Ogg build, file and MediaStore writes) runs here, not on the Bluetooth thread. */
+    private val saveExecutor = Executors.newSingleThreadExecutor()
     private val downloadTimeout = Runnable { onDownloadTimeout() }
     private var chunkSize = 20
     private val fetchTimeout = Runnable { onFetchStepTimeout() }
@@ -235,6 +239,7 @@ class CrpRingDeviceSupport : AbstractBTLESingleDeviceSupport(LOG) {
             }
             assembler.reset()
         }
+        saveExecutor.shutdown() // notes that are already queued are still saved
         super.dispose()
     }
 
@@ -355,7 +360,7 @@ class CrpRingDeviceSupport : AbstractBTLESingleDeviceSupport(LOG) {
 
     /** Call with [lock] held. */
     private fun startVoiceNoteDownload() {
-        savedVoiceNotes = 0
+        savedVoiceNotes.set(0)
         val active = CrpRingRecordingDownloader(CrpRingVoiceNoteStore.downloadedNames(device)) { frame ->
             send("Download voice notes", frame)
         }
@@ -364,10 +369,15 @@ class CrpRingDeviceSupport : AbstractBTLESingleDeviceSupport(LOG) {
         scheduleDownloadTimeout()
     }
 
-    /** Call with [lock] held. Saves finished notes at once, so a later failure does not lose them. */
+    /**
+     * Call with [lock] held. Each finished note goes to the save thread at once, so a later
+     * failure does not lose it. The busy task ends on the save thread after the last save.
+     */
     private fun onDownloadProgress(active: CrpRingRecordingDownloader) {
         for (recording in active.finished) {
-            if (CrpRingVoiceNoteStore.save(context, device, recording)) savedVoiceNotes++
+            saveExecutor.execute {
+                if (CrpRingVoiceNoteStore.save(context, device, recording)) savedVoiceNotes.incrementAndGet()
+            }
         }
         active.finished.clear()
         if (!active.isFinished) {
@@ -376,12 +386,16 @@ class CrpRingDeviceSupport : AbstractBTLESingleDeviceSupport(LOG) {
         }
         handler.removeCallbacks(downloadTimeout)
         downloader = null
+        active.skipReason?.let { LOG.info("Voice note download skipped: {}", it) }
         if (active.failed.isNotEmpty()) LOG.warn("Voice notes not downloaded: {}", active.failed)
-        LOG.info("Voice notes saved: {}", savedVoiceNotes)
-        if (savedVoiceNotes > 0) {
-            GB.toast(context, context.resources.getQuantityString(R.plurals.crpring_voice_notes_saved, savedVoiceNotes, savedVoiceNotes), Toast.LENGTH_LONG, GB.INFO)
+        saveExecutor.execute {
+            val saved = savedVoiceNotes.get()
+            LOG.info("Voice notes saved: {}", saved)
+            if (saved > 0) {
+                GB.toast(context, context.resources.getQuantityString(R.plurals.crpring_voice_notes_saved, saved, saved), Toast.LENGTH_LONG, GB.INFO)
+            }
+            endBusyTask()
         }
-        endBusyTask()
     }
 
     private fun onDownloadTimeout() {

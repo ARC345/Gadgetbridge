@@ -77,4 +77,24 @@ class CrpRingRecordingProtocolTest {
         )
         assertNull(CrpRingRecordingParsers.transferReply(bytes(1, 0)))
     }
+
+    @Test
+    fun transferResultIsSigned() {
+        assertEquals(-1L, CrpRingRecordingParsers.transferReply(bytes(3, 0xFF) + name15("A"))!!.value)
+    }
+
+    @Test
+    fun recordingState() {
+        assertEquals(1, CrpRingRecordingParsers.recordingState(bytes(1, 0, 0, 0, 0, 0, 0, 0, 0)))
+        assertNull(CrpRingRecordingParsers.recordingState(bytes(1, 0)))
+        assertArrayEquals(CrpRingFrame.build(10, 0), CrpRingRecordingCommands.queryState())
+    }
+
+    @Test
+    fun safeFileNameRemovesPathParts() {
+        assertEquals("REC_0001.opus", CrpRingRecordingParsers.safeFileName("REC 0001.opus"))
+        assertEquals("_.._x", CrpRingRecordingParsers.safeFileName("/../x"))
+        assertEquals("voice-note", CrpRingRecordingParsers.safeFileName(".."))
+        assertEquals("voice-note", CrpRingRecordingParsers.safeFileName(""))
+    }
 }

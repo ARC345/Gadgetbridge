@@ -17,6 +17,7 @@
 package nodomain.freeyourgadget.gadgetbridge.service.devices.crpring
 
 import java.io.ByteArrayOutputStream
+import java.io.OutputStream
 
 /**
  * Wraps raw Opus packets (no container, as the band stores them) in an Ogg Opus file
@@ -43,35 +44,42 @@ object OggOpusWriter {
         return crc
     }
 
-    /**
-     * [raw] holds packets of exactly [packetSize] bytes, each 20 ms long. An incomplete last
-     * packet is dropped. The pre-skip is 0, so no audio is cut off.
-     */
     fun fromRawPackets(raw: ByteArray, packetSize: Int, inputRate: Int, channels: Int): ByteArray {
-        require(packetSize in 1..255) { "Packet size must fit in one Ogg segment: $packetSize" }
         val out = ByteArrayOutputStream()
+        write(raw, packetSize, inputRate, channels, out)
+        return out.toByteArray()
+    }
+
+    /**
+     * Writes the Ogg Opus file to [out], one page at a time. [raw] holds packets of exactly
+     * [packetSize] bytes, each 20 ms long; an incomplete last packet is dropped. The packets
+     * are not copied one by one. The pre-skip is 0, so no audio is cut off.
+     */
+    fun write(raw: ByteArray, packetSize: Int, inputRate: Int, channels: Int, out: OutputStream) {
+        require(packetSize in 1..255) { "Packet size must fit in one Ogg segment: $packetSize" }
         var sequence = 0L
 
-        fun page(type: Int, granule: Long, packets: List<ByteArray>) {
+        /** One page with the packets [first] until [first] + [count] of [src], each [size] bytes. */
+        fun page(type: Int, granule: Long, src: ByteArray, first: Int, count: Int, size: Int) {
             val lacing = ByteArrayOutputStream()
-            for (packet in packets) {
-                var n = packet.size
+            repeat(count) {
+                var n = size
                 while (n >= 255) { lacing.write(255); n -= 255 }
                 lacing.write(n)
             }
             val segments = lacing.toByteArray()
-            val header = ByteArrayOutputStream()
-            header.write("OggS".toByteArray())
-            header.write(0)
-            header.write(type)
-            writeLe(header, granule, 8)
-            writeLe(header, SERIAL.toLong(), 4)
-            writeLe(header, sequence++, 4)
-            writeLe(header, 0, 4) // CRC, set below
-            header.write(segments.size)
-            header.write(segments)
-            for (packet in packets) header.write(packet)
-            val bytes = header.toByteArray()
+            val page = ByteArrayOutputStream(27 + segments.size + count * size)
+            page.write("OggS".toByteArray())
+            page.write(0)
+            page.write(type)
+            writeLe(page, granule, 8)
+            writeLe(page, SERIAL.toLong(), 4)
+            writeLe(page, sequence++, 4)
+            writeLe(page, 0, 4) // CRC, set below
+            page.write(segments.size)
+            page.write(segments)
+            page.write(src, first * size, count * size)
+            val bytes = page.toByteArray()
             val crc = crc32(bytes)
             for (i in 0 until 4) bytes[22 + i] = (crc shr (8 * i)).toByte()
             out.write(bytes)
@@ -86,7 +94,7 @@ object OggOpusWriter {
             writeLe(this, 0, 2) // output gain
             write(0) // channel mapping family 0 (mono or stereo)
         }.toByteArray()
-        page(2, 0, listOf(head))
+        page(2, 0, head, 0, 1, head.size)
 
         val vendor = VENDOR.toByteArray()
         val tags = ByteArrayOutputStream().apply {
@@ -95,20 +103,20 @@ object OggOpusWriter {
             write(vendor)
             writeLe(this, 0, 4) // no comments
         }.toByteArray()
-        page(0, 0, listOf(tags))
+        page(0, 0, tags, 0, 1, tags.size)
 
-        val packets = (0 until raw.size / packetSize).map { raw.copyOfRange(it * packetSize, (it + 1) * packetSize) }
-        if (packets.isEmpty()) {
-            page(4, 0, emptyList())
-            return out.toByteArray()
+        val packetCount = raw.size / packetSize
+        if (packetCount == 0) {
+            page(4, 0, raw, 0, 0, packetSize)
+            return
         }
-        val pages = packets.chunked(PACKETS_PER_PAGE)
-        var count = 0L
-        pages.forEachIndexed { i, pagePackets ->
-            count += pagePackets.size
-            page(if (i == pages.size - 1) 4 else 0, count * SAMPLES_PER_PACKET_48K, pagePackets)
+        var first = 0
+        while (first < packetCount) {
+            val count = minOf(PACKETS_PER_PAGE, packetCount - first)
+            val last = first + count >= packetCount
+            page(if (last) 4 else 0, (first + count).toLong() * SAMPLES_PER_PACKET_48K, raw, first, count, packetSize)
+            first += count
         }
-        return out.toByteArray()
     }
 
     private fun writeLe(out: ByteArrayOutputStream, value: Long, bytes: Int) {

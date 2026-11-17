@@ -34,7 +34,7 @@ Source: decompiled `com.pebblevox.ring` 1.0.1. Classes: `q0/j0.java` (commands),
 | 10,4 | `{name}` delete; 15 × `0xFF` deletes all | result |
 | 10,5 | `{1, name}` query size | `[1, size u32, name]` |
 | 10,5 | `{2, offset u32, length u32, name}` request data | `[2, dataSize u32, name]`, then the data on `fdd6` |
-| 10,5 | `{3, crc u16 BE, name}` send CRC | `[3, ok, name]` (ok > 0) |
+| 10,5 | `{3, crc u16 BE, name}` send CRC | `[3, ok, name]` (ok is a signed byte: > 0 is OK, 0xFF is a failure) |
 | 10,5 | `{4, ok (1 or 0xFF), name}` end transfer | `[3, …]` or `[0, …]` state |
 | 10,11 | none: storage check | `[1]` the band has storage, `[0]` stream-only |
 
@@ -77,19 +77,27 @@ audio.
 - `CrpRingCrc16` — the Nordic CRC-16.
 - `OggOpusWriter` — writes `OpusHead`, `OpusTags` and audio pages (one granule = 48 kHz
   samples; 960 per 20 ms packet), with the Ogg page CRC-32 (polynomial `0x04C11DB7`).
-- `CrpRingRecordingDownloader` — state machine: list → for each new name: size → chunks →
-  CRC → end. Input: replies and `fdd6` bytes. Output: requests and finished files (bytes).
-  Timeouts are given from outside, as in the history fetcher.
+- `CrpRingRecordingDownloader` — state machine: storage check (`10,11`) → recording state
+  (`10,0`) → list → for each new name: size → chunks → CRC. Input: replies and `fdd6` bytes.
+  Output: requests and finished files (bytes). Timeouts are given from outside, as in the
+  history fetcher. The download is skipped, with a logged reason, if the band has no storage,
+  if a recording is in progress (the file is still growing), or if the checks get no reply.
 
 ### Android side
 
 - `CrpRingDeviceSupport` routes `fdd6` notifications and group 10 replies to the downloader.
   It enables notifications on `fdd6`.
 - The downloader runs after the history fetch, in the same busy task.
-- Files go to `<Gadgetbridge export directory>/voice-notes/<device address>/<name>.ogg`.
-  A list of downloaded names is kept in the device preferences, so a name is not fetched
-  again.
-- A failed CRC or a timeout drops the file and sends `{4, 0xFF, name}`.
+- Saving runs on a background thread. The Ogg file is written page by page straight to the
+  output stream.
+- Android 10 and later: `Music/Gadgetbridge/Voice notes/<name>.ogg` through MediaStore (no
+  permission needed). Android 6 to 9: the app's external files folder, `voice-notes/`. The
+  raw band file is always kept in the app's external files folder, `voice-notes-raw/`.
+- Band file names are cleaned before use (only `A-Z a-z 0-9 . _ -`).
+- A list of downloaded names is kept in the device preferences, so a name is not fetched
+  again. A note is marked only after it is saved.
+- A timeout drops the file and sends `{4, 0xFF, name}`. A failed CRC drops the file and sends
+  nothing more, as in the vendor app. Files larger than 16 MB are skipped.
 
 ### Not in phase 2
 

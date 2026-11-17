@@ -57,8 +57,6 @@ class CrpRingHistoryFetcher(
             if (message.group != group || message.command != command) return false
             val payload = message.payload
             if (day != null && (payload.isEmpty() || (payload[0].toInt() and 0xFF) != day)) return false
-            if (command == CrpRingConstants.CMD_SLEEP_DETAILS && group == CrpRingConstants.GROUP_SLEEP &&
-                (payload.isEmpty() || (payload[0].toInt() and 0xFF) != sessionId)) return false
             if (page != null && (payload.size < 2 || (payload[1].toInt() and 0xFF) != page)) return false
             return true
         }
@@ -138,9 +136,11 @@ class CrpRingHistoryFetcher(
                 list.add(Step(CrpRingCommands.timedSpo2(day, page), CrpRingConstants.CMD_QUERY_TIMED_SPO2, day, page))
             }
         }
-        list.add(Step(CrpRingCommands.sleepSessions(), CrpRingConstants.CMD_SLEEP_SESSIONS, null, null, CrpRingConstants.GROUP_SLEEP))
         list.add(Step(CrpRingCommands.manualHeartRate(), CrpRingConstants.CMD_QUERY_MANUAL_HEART_RATE, null, null))
         list.add(Step(CrpRingCommands.manualSpo2(), CrpRingConstants.CMD_QUERY_MANUAL_SPO2, null, null))
+        // Sleep comes last: if the band answers neither 7,4 nor 2,14, the timeouts stop the fetch
+        // without losing the other data.
+        list.add(Step(CrpRingCommands.sleepSessions(), CrpRingConstants.CMD_SLEEP_SESSIONS, null, null, CrpRingConstants.GROUP_SLEEP))
         return list
     }
 
@@ -148,7 +148,7 @@ class CrpRingHistoryFetcher(
         if (step.group == CrpRingConstants.GROUP_SLEEP) {
             when (step.command) {
                 CrpRingConstants.CMD_SLEEP_SESSIONS -> consumeSessions(payload)
-                CrpRingConstants.CMD_SLEEP_DETAILS -> consumeDetails(payload)
+                CrpRingConstants.CMD_SLEEP_DETAILS -> consumeDetails(step.sessionId, payload)
                 CrpRingConstants.CMD_SLEEP_SESSION_STAGES -> consumeSessionStages(step.sessionId, payload)
             }
             return
@@ -185,14 +185,18 @@ class CrpRingHistoryFetcher(
         })
     }
 
-    private fun consumeDetails(payload: ByteArray) {
+    /**
+     * 7,5 is asked by list index, but the vendor app asks 7,6 with the id from this reply, so the
+     * two can differ. The details are kept under the list index of the step.
+     */
+    private fun consumeDetails(index: Int?, payload: ByteArray) {
         val details = CrpRingParsers.sleepDetails(payload) ?: return
-        // Naps have no stage list; phase 1 does not store them.
-        if (details.type != CrpRingConstants.SLEEP_TYPE_LONG) return
-        sessionDetails[details.id] = details
+        // Naps have no stage list; they are not stored. Any other type gets its stages, as in the vendor app.
+        if (details.type == CrpRingConstants.SLEEP_TYPE_NAP || index == null) return
+        sessionDetails[index] = details
         insertNext(listOf(Step(
             CrpRingCommands.sleepSessionStages(details.id), CrpRingConstants.CMD_SLEEP_SESSION_STAGES,
-            null, null, CrpRingConstants.GROUP_SLEEP, details.id
+            null, null, CrpRingConstants.GROUP_SLEEP, index
         )))
     }
 
