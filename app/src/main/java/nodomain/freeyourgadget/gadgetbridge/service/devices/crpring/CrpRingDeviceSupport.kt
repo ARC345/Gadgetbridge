@@ -29,6 +29,7 @@ import nodomain.freeyourgadget.gadgetbridge.R
 import nodomain.freeyourgadget.gadgetbridge.activities.devicesettings.DeviceSettingsPreferenceConst
 import nodomain.freeyourgadget.gadgetbridge.deviceevents.GBDeviceEventBatteryInfo
 import nodomain.freeyourgadget.gadgetbridge.deviceevents.GBDeviceEventVersionInfo
+import nodomain.freeyourgadget.gadgetbridge.devices.crpring.AbstractCrpRingCoordinator
 import nodomain.freeyourgadget.gadgetbridge.devices.crpring.CrpRingConstants
 import nodomain.freeyourgadget.gadgetbridge.entities.GenericHeartRateSample
 import nodomain.freeyourgadget.gadgetbridge.impl.GBDevice
@@ -58,12 +59,17 @@ class CrpRingDeviceSupport : AbstractBTLESingleDeviceSupport(LOG) {
         private const val FETCH_STEP_TIMEOUT_MILLIS = 5_000L
         private const val MEASUREMENT_TIMEOUT_MILLIS = 60_000L
         private const val AUTH_TIMEOUT_MILLIS = 5_000L
+        /** The vendor app stops a voice note transfer after 10 s without data. */
+        private const val DOWNLOAD_TIMEOUT_MILLIS = 10_000L
     }
 
     private val lock = Any()
     private val assembler = CrpRingFrameAssembler()
     private val handler = Handler(Looper.getMainLooper())
     private var fetcher: CrpRingHistoryFetcher? = null
+    private var downloader: CrpRingRecordingDownloader? = null
+    private var savedVoiceNotes = 0
+    private val downloadTimeout = Runnable { onDownloadTimeout() }
     private var chunkSize = 20
     private val fetchTimeout = Runnable { onFetchStepTimeout() }
     private val measurementTimeout = Runnable { stopHeartRateMeasurement() }
@@ -85,6 +91,7 @@ class CrpRingDeviceSupport : AbstractBTLESingleDeviceSupport(LOG) {
         builder.requestMtu(CrpRingConstants.MTU)
         builder.notify(CrpRingConstants.UUID_CHARACTERISTIC_NOTIFY, true)
         builder.notify(CrpRingConstants.UUID_CHARACTERISTIC_STEPS, true)
+        builder.notify(CrpRingConstants.UUID_CHARACTERISTIC_DATA, true)
         builder.notify(GattCharacteristic.CHARACTERISTIC_BATTERY_LEVEL.uuid, true)
         builder.read(GattCharacteristic.CHARACTERISTIC_BATTERY_LEVEL.uuid)
         write(builder, CrpRingCommands.firmwareVersion())
@@ -107,12 +114,14 @@ class CrpRingDeviceSupport : AbstractBTLESingleDeviceSupport(LOG) {
         handler.removeCallbacks(fetchTimeout)
         handler.removeCallbacks(authTimeout)
         handler.removeCallbacks(measurementTimeout)
+        handler.removeCallbacks(downloadTimeout)
         synchronized(lock) {
             val active = fetcher
-            if (active != null) {
-                LOG.warn("Connection lost during the history fetch, stopping it")
-                active.cancel()
+            if (active != null || downloader != null) {
+                LOG.warn("Connection lost during the fetch, stopping it")
+                active?.cancel()
                 fetcher = null
+                downloader = null
                 device.unsetBusyTask()
                 device.sendDeviceUpdateIntent(context)
             }
@@ -145,6 +154,18 @@ class CrpRingDeviceSupport : AbstractBTLESingleDeviceSupport(LOG) {
             CrpRingConstants.UUID_CHARACTERISTIC_NOTIFY -> {
                 val message = synchronized(lock) { assembler.add(value, System.currentTimeMillis()) }
                 if (message != null) handleMessage(message)
+                return true
+            }
+            CrpRingConstants.UUID_CHARACTERISTIC_DATA -> {
+                synchronized(lock) {
+                    val active = downloader
+                    if (active == null) {
+                        LOG.debug("fdd6 data with no download: {} bytes", value.size)
+                    } else {
+                        active.onData(value)
+                        onDownloadProgress(active)
+                    }
+                }
                 return true
             }
             CrpRingConstants.UUID_CHARACTERISTIC_STEPS -> {
@@ -189,8 +210,8 @@ class CrpRingDeviceSupport : AbstractBTLESingleDeviceSupport(LOG) {
 
     override fun onFetchRecordedData(dataTypes: Int) {
         synchronized(lock) {
-            if (fetcher != null) {
-                LOG.info("History fetch is already running")
+            if (fetcher != null || downloader != null) {
+                LOG.info("A fetch is already running")
                 return
             }
             device.setBusyTask(R.string.busy_task_fetch_activity_data, context)
@@ -207,8 +228,9 @@ class CrpRingDeviceSupport : AbstractBTLESingleDeviceSupport(LOG) {
     override fun dispose() {
         handler.removeCallbacksAndMessages(null)
         synchronized(lock) {
-            if (fetcher != null) {
+            if (fetcher != null || downloader != null) {
                 fetcher = null
+                downloader = null
                 device.unsetBusyTask()
             }
             assembler.reset()
@@ -222,6 +244,11 @@ class CrpRingDeviceSupport : AbstractBTLESingleDeviceSupport(LOG) {
             val active = fetcher
             if (active != null && active.handle(message)) {
                 onFetchProgress(active)
+                return
+            }
+            val download = downloader
+            if (download != null && download.handle(message)) {
+                onDownloadProgress(download)
                 return
             }
         }
@@ -313,9 +340,62 @@ class CrpRingDeviceSupport : AbstractBTLESingleDeviceSupport(LOG) {
         if (active.skipped.isNotEmpty()) LOG.warn("Skipped history steps: {}", active.skipped)
         if (active.abortedAfterTimeouts) LOG.warn("The band stopped answering; the fetch ended early")
         CrpRingHistoryStore.save(device, context, active.result)
+        if ((device.deviceCoordinator as? AbstractCrpRingCoordinator)?.supportsVoiceNotes() == true) {
+            startVoiceNoteDownload()
+        } else {
+            endBusyTask()
+        }
+    }
+
+    private fun endBusyTask() {
         device.unsetBusyTask()
         device.sendDeviceUpdateIntent(context)
         GB.signalActivityDataFinish(device)
+    }
+
+    /** Call with [lock] held. */
+    private fun startVoiceNoteDownload() {
+        savedVoiceNotes = 0
+        val active = CrpRingRecordingDownloader(CrpRingVoiceNoteStore.downloadedNames(device)) { frame ->
+            send("Download voice notes", frame)
+        }
+        downloader = active
+        active.start()
+        scheduleDownloadTimeout()
+    }
+
+    /** Call with [lock] held. Saves finished notes at once, so a later failure does not lose them. */
+    private fun onDownloadProgress(active: CrpRingRecordingDownloader) {
+        for (recording in active.finished) {
+            if (CrpRingVoiceNoteStore.save(context, device, recording)) savedVoiceNotes++
+        }
+        active.finished.clear()
+        if (!active.isFinished) {
+            scheduleDownloadTimeout()
+            return
+        }
+        handler.removeCallbacks(downloadTimeout)
+        downloader = null
+        if (active.failed.isNotEmpty()) LOG.warn("Voice notes not downloaded: {}", active.failed)
+        LOG.info("Voice notes saved: {}", savedVoiceNotes)
+        if (savedVoiceNotes > 0) {
+            GB.toast(context, context.resources.getQuantityString(R.plurals.crpring_voice_notes_saved, savedVoiceNotes, savedVoiceNotes), Toast.LENGTH_LONG, GB.INFO)
+        }
+        endBusyTask()
+    }
+
+    private fun onDownloadTimeout() {
+        synchronized(lock) {
+            val active = downloader ?: return
+            LOG.warn("Voice note download step timed out")
+            active.onTimeout()
+            onDownloadProgress(active)
+        }
+    }
+
+    private fun scheduleDownloadTimeout() {
+        handler.removeCallbacks(downloadTimeout)
+        handler.postDelayed(downloadTimeout, DOWNLOAD_TIMEOUT_MILLIS)
     }
 
     private fun getOrCreatePin(): String {

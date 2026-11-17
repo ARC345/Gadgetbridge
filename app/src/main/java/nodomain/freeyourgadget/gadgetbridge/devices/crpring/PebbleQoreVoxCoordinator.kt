@@ -19,11 +19,13 @@ package nodomain.freeyourgadget.gadgetbridge.devices.crpring
 import nodomain.freeyourgadget.gadgetbridge.R
 import java.util.regex.Pattern
 
-/** Pebble Qore Vox: screenless band with voice recording. Phase 1 syncs health data only. */
+/** Pebble Qore Vox: screenless band with voice recording. Syncs health data and voice notes. */
 class PebbleQoreVoxCoordinator : AbstractCrpRingCoordinator() {
     override fun getSupportedDeviceName(): Pattern = Pattern.compile("^PBL Qore Vox.*")
 
     override fun getManufacturer(): String = "Pebble"
 
     override fun getDeviceNameResource(): Int = R.string.devicetype_pebble_qore_vox
+
+    override fun supportsVoiceNotes(): Boolean = true
 }
