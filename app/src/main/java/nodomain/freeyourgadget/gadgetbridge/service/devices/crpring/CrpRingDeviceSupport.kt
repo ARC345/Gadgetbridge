@@ -376,7 +376,11 @@ class CrpRingDeviceSupport : AbstractBTLESingleDeviceSupport(LOG) {
     private fun onDownloadProgress(active: CrpRingRecordingDownloader) {
         for (recording in active.finished) {
             saveExecutor.execute {
-                if (CrpRingVoiceNoteStore.save(context, device, recording)) savedVoiceNotes.incrementAndGet()
+                val saved = CrpRingVoiceNoteStore.save(context, device, recording)
+                if (saved != null) {
+                    savedVoiceNotes.incrementAndGet()
+                    CrpRingVoiceNoteShare.notifyNewNote(context, saved.fileName, saved.uri)
+                }
             }
         }
         active.finished.clear()
