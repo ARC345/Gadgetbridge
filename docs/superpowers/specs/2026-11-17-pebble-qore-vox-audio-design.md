@@ -37,6 +37,7 @@ Source: decompiled `com.pebblevox.ring` 1.0.1. Classes: `q0/j0.java` (commands),
 | 10,5 | `{3, crc u16 BE, name}` send CRC | `[3, ok, name]` (ok is a signed byte: > 0 is OK, 0xFF is a failure) |
 | 10,5 | `{4, ok (1 or 0xFF), name}` end transfer | `[3, …]` or `[0, …]` state |
 | 10,11 | none: storage check | `[1]` the band has storage, `[0]` stream-only |
+| 10,5 | `{5, name}` file mapping (stream-only) | `[5, count u16, remaining u16, (startFrame u32, endFrame u32, name) × count]`; `FF FF FF FF` = not found |
 
 - A name is always 15 bytes, UTF-8, padded with zeros. All numbers are little-endian, except
   the CRC in `10,5 {3}`, which is big-endian.
@@ -51,8 +52,13 @@ Source: decompiled `com.pebblevox.ring` 1.0.1. Classes: `q0/j0.java` (commands),
   crc = crc xor ((crc and 0xFF) shl 5) and 0xFFFF
   ```
 - The app stops a transfer after 10 s with no data.
-- If `10,11` says "no storage", the app uses a stream-only mode (live audio on `10,8` during
-  the recording). The Vox stores up to 100 minutes, so phase 2 supports only the storage mode.
+- If `10,11` says "no storage", the band is "stream-only". The Qore Vox (firmware
+  MOY-WWB2-1.0.1) reports this. It still stores the recording: a listed name is virtual
+  (`<start timestamp>.<ext>`), and the mapping query (`10,5 {5, name}`) returns the stored
+  segments. The vendor app downloads each segment with the normal transfer and joins them in
+  frame order (`w0/c.java`: `<ts>_merged.opus`). It also joins live-stream parts (`10,8`)
+  that it saved while connected; Gadgetbridge does not turn the stream on, so it has none.
+  On "not found" the vendor app tries again up to 3 times, 2.5 s apart.
 
 ### Audio format
 
@@ -80,8 +86,10 @@ audio.
 - `CrpRingRecordingDownloader` — state machine: storage check (`10,11`) → recording state
   (`10,0`) → list → for each new name: size → chunks → CRC. Input: replies and `fdd6` bytes.
   Output: requests and finished files (bytes). Timeouts are given from outside, as in the
-  history fetcher. The download is skipped, with a logged reason, if the band has no storage,
-  if a recording is in progress (the file is still growing), or if the checks get no reply.
+  history fetcher. On a stream-only band each name goes through the mapping query, and the
+  segments are joined in frame order. The download is skipped, with a logged reason, if a
+  recording is in progress (the file is still growing) or if the checks get no reply. A note
+  that is "not found" or has a failed segment is not marked, so the next sync tries again.
 
 ### Android side
 
@@ -101,7 +109,7 @@ audio.
 
 ### Not in phase 2
 
-Delete on the band, start or stop a recording from the phone, stream-only bands, MP3 export,
+Delete on the band, start or stop a recording from the phone, live-stream parts (`10,8`), MP3 export,
 transcription, and a voice note screen in the app.
 
 ### Open points to check on the band

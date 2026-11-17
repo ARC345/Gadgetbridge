@@ -18,6 +18,11 @@ package nodomain.freeyourgadget.gadgetbridge.service.devices.crpring
 
 data class CrpRingFileListPage(val names: List<String>, val remaining: Int)
 
+/** One stored part of a recording on a stream-only band: frames [startFrame]..[endFrame] in band file [name]. */
+data class CrpRingSegment(val startFrame: Long, val endFrame: Long, val name: String)
+
+data class CrpRingFileMappingPage(val segments: List<CrpRingSegment>, val remaining: Int, val notFound: Boolean)
+
 /**
  * A 10,5 reply: kind 1 = file size, 2 = chunk size, 3 = CRC result, 0 = state. For kinds 3 and 0
  * the value is the signed result byte, as the vendor reads it: value > 0 is OK, 0xFF (-1) is not.
@@ -50,6 +55,10 @@ object CrpRingRecordingCommands {
     /** The CRC is big-endian here, unlike all other numbers. */
     fun sendCrc(name: String, crc: Int): ByteArray =
         CrpRingFrame.build(GROUP, CMD_TRANSFER, byteArrayOf(3, (crc shr 8).toByte(), crc.toByte()) + name15(name))
+
+    /** Stream-only bands: asks which stored band files hold the recording [name]. */
+    fun queryFileMapping(name: String): ByteArray =
+        CrpRingFrame.build(GROUP, CMD_TRANSFER, byteArrayOf(5) + name15(name))
 
     fun endTransfer(name: String, success: Boolean): ByteArray =
         CrpRingFrame.build(GROUP, CMD_TRANSFER, byteArrayOf(4, if (success) 1 else 0xFF.toByte()) + name15(name))
@@ -87,6 +96,28 @@ object CrpRingRecordingParsers {
     fun safeFileName(name: String): String {
         val safe = name.replace(Regex("[^A-Za-z0-9._-]"), "_")
         return if (safe.isEmpty() || safe.all { it == '.' }) "voice-note" else safe
+    }
+
+    /**
+     * 10,5 kind 5: [5, count u16, remaining u16, (startFrame u32, endFrame u32, name) * count].
+     * 0xFFFFFFFF in place of count and remaining means "not found". More pages follow while
+     * remaining > 0. A segment with both frames 0xFFFFFFFF is invalid and is dropped.
+     */
+    fun fileMappingPage(payload: ByteArray): CrpRingFileMappingPage? {
+        if (payload.size < 5 || u8(payload, 0) != 5) return null
+        if ((1..4).all { u8(payload, it) == 0xFF }) return CrpRingFileMappingPage(emptyList(), 0, true)
+        val count = u16(payload, 1)
+        val segments = ArrayList<CrpRingSegment>()
+        var offset = 5
+        for (i in 0 until count) {
+            if (offset + 23 > payload.size) break
+            val start = u32(payload, offset)
+            val end = u32(payload, offset + 4)
+            val name = name(payload, offset + 8)
+            if (name != null && !(start == 0xFFFFFFFFL && end == 0xFFFFFFFFL)) segments.add(CrpRingSegment(start, end, name))
+            offset += 23
+        }
+        return CrpRingFileMappingPage(segments, u16(payload, 3), false)
     }
 
     fun transferReply(payload: ByteArray): CrpRingTransferReply? {
