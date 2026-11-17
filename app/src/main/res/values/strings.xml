@@ -2427,6 +2427,10 @@
         <item quantity="one">%d voice note saved to Music/Gadgetbridge/Voice notes</item>
         <item quantity="other">%d voice notes saved to Music/Gadgetbridge/Voice notes</item>
     </plurals>
+    <string name="crpring_voice_note_title">New voice note from your band</string>
+    <string name="crpring_voice_note_send_gemini">Send to Gemini</string>
+    <string name="crpring_voice_note_play">Play</string>
+    <string name="crpring_voice_note_share">Send voice note</string>
     <string name="crpring_pin_rejected">The band did not accept the PIN. Enter the PIN of the Pebble Vox app in the device settings, or unpair the band in that app.</string>
     <string name="devicetype_colacao21" translatable="false">ColaCao 2021</string>
     <string name="devicetype_colacao23" translatable="false">ColaCao 2023</string>
