@@ -71,4 +71,7 @@ abstract class AbstractCrpRingCoordinator : AbstractBLEDeviceCoordinator() {
     override fun supportsManualHeartRateMeasurement(device: GBDevice): Boolean = true
     override fun supportsSpo2(device: GBDevice): Boolean = true
     override fun supportsFindDevice(device: GBDevice): Boolean = true
+
+    /** True if the band records voice notes that the fetch should download. */
+    open fun supportsVoiceNotes(): Boolean = false
 }

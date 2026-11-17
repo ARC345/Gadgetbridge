@@ -29,6 +29,8 @@ object CrpRingConstants {
     val UUID_CHARACTERISTIC_STEPS: UUID = uuid16("fdd1")
     val UUID_CHARACTERISTIC_WRITE: UUID = uuid16("fdd2")
     val UUID_CHARACTERISTIC_NOTIFY: UUID = uuid16("fdd3")
+    /** Raw file bytes (voice notes); no frame header. */
+    val UUID_CHARACTERISTIC_DATA: UUID = uuid16("fdd6")
 
     const val GROUP_SET = 1
     const val GROUP_QUERY = 2
