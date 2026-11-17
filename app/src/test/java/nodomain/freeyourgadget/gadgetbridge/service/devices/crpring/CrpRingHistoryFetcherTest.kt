@@ -54,17 +54,17 @@ class CrpRingHistoryFetcherTest {
     fun sendsRequestsInOrderAndFinishes() {
         fetcher.start()
         answerDay()
-        assertTrue(fetcher.handle(reply(7, 4, ByteArray(0))))
         assertTrue(fetcher.handle(reply(2, 9, bytes(0))))
-        assertFalse(fetcher.isFinished)
         assertTrue(fetcher.handle(reply(2, 11, bytes(0))))
+        assertFalse(fetcher.isFinished)
+        assertTrue(fetcher.handle(reply(7, 4, ByteArray(0))))
         assertTrue(fetcher.isFinished)
         val expected = listOf(
             CrpRingCommands.stepsDetails(0),
             CrpRingCommands.timedHeartRate(0, 0), CrpRingCommands.timedHeartRate(0, 1),
             CrpRingCommands.timedSpo2(0, 0), CrpRingCommands.timedSpo2(0, 1),
-            CrpRingCommands.sleepSessions(),
             CrpRingCommands.manualHeartRate(), CrpRingCommands.manualSpo2(),
+            CrpRingCommands.sleepSessions(),
         )
         assertEquals(expected.size, sent.size)
         expected.forEachIndexed { i, frame -> assertArrayEquals(frame, sent[i]) }
@@ -146,16 +146,21 @@ class CrpRingHistoryFetcherTest {
     fun manualHeartRateUsesDeviceTimestamps() {
         fetcher.start()
         answerDay()
-        fetcher.handle(reply(7, 4, ByteArray(0)))
         val nineLocal = ms("2026-11-16T03:30:00Z")
         fetcher.handle(reply(2, 9, bytes(0, 75) + le32(CrpRingTime.toDeviceSeconds(nineLocal, zone))))
         assertEquals(listOf(CrpRingValueSample(nineLocal, 75)), fetcher.result.heartRate)
     }
 
+    private fun answerUntilSleep() {
+        answerDay()
+        assertTrue(fetcher.handle(reply(2, 9, bytes(0))))
+        assertTrue(fetcher.handle(reply(2, 11, bytes(0))))
+    }
+
     @Test
     fun sleepSessionAddsDetailsAndStageSteps() {
         fetcher.start()
-        answerDay()
+        answerUntilSleep()
         // Session 0 is invalid (time 0); session 1 started 2026-11-15 23:00 local.
         val start = device("2026-11-15T17:30:00Z")
         val end = device("2026-11-16T00:30:00Z")
@@ -172,40 +177,38 @@ class CrpRingHistoryFetcherTest {
             ),
             fetcher.result.sleep
         )
-        assertArrayEquals(CrpRingCommands.manualHeartRate(), sent.last())
+        assertTrue(fetcher.isFinished)
     }
 
     @Test
     fun napSessionHasNoStageStep() {
         fetcher.start()
-        answerDay()
+        answerUntilSleep()
         val start = device("2026-11-16T08:30:00Z")
         fetcher.handle(reply(7, 4, le32(start)))
         val details = bytes(0, CrpRingConstants.SLEEP_TYPE_NAP) + le32(start) + le32(start + 1800) + ByteArray(12)
         assertTrue(fetcher.handle(reply(7, 5, details)))
-        assertArrayEquals(CrpRingCommands.manualHeartRate(), sent.last())
+        assertTrue(fetcher.isFinished)
     }
 
     @Test
     fun sleepSessionsTimeoutFallsBackToDailySleep() {
         fetcher.start()
-        answerDay()
+        answerUntilSleep()
         fetcher.onTimeout()
         assertArrayEquals(CrpRingCommands.sleep(0), sent.last())
         assertTrue(fetcher.handle(reply(2, 14, bytes(0, 1, 23, 0, 0, 6, 0))))
         assertEquals(1, fetcher.result.sleep.size)
         assertEquals(420, fetcher.result.sleep[0].durationMinutes)
-        assertArrayEquals(CrpRingCommands.manualHeartRate(), sent.last())
+        assertTrue(fetcher.isFinished)
     }
 
     @Test
     fun messagesAfterFinishAreNotConsumed() {
         fetcher.start()
-        answerDay()
+        answerUntilSleep()
         fetcher.handle(reply(7, 4, ByteArray(0)))
-        fetcher.handle(reply(2, 9, bytes(0)))
-        fetcher.handle(reply(2, 11, bytes(0)))
-        assertFalse(fetcher.handle(reply(2, 11, bytes(0))))
+        assertFalse(fetcher.handle(reply(7, 4, ByteArray(0))))
     }
 
     @Test
@@ -237,5 +240,33 @@ class CrpRingHistoryFetcherTest {
         fetcher.onTimeout()
         assertFalse(fetcher.isFinished)
         assertFalse(fetcher.abortedAfterTimeouts)
+    }
+
+    @Test
+    fun detailsReplyWithAnotherIdIsAcceptedAndItsIdIsUsed() {
+        // The vendor asks 7,5 by list index and then 7,6 with the id from the 7,5 reply.
+        fetcher.start()
+        answerUntilSleep()
+        val start = device("2026-11-15T17:30:00Z")
+        val end = device("2026-11-16T00:30:00Z")
+        fetcher.handle(reply(7, 4, le32(start)))
+        assertArrayEquals(CrpRingCommands.sleepDetails(0), sent.last())
+        val details = bytes(5, CrpRingConstants.SLEEP_TYPE_LONG) + le32(start) + le32(end) + ByteArray(12)
+        assertTrue(fetcher.handle(reply(7, 5, details)))
+        assertArrayEquals(CrpRingCommands.sleepSessionStages(5), sent.last())
+        assertTrue(fetcher.handle(reply(7, 6, bytes(5, 1, 23, 0, 0, 6, 0))))
+        assertEquals(1, fetcher.result.sleep.size)
+    }
+
+    @Test
+    fun sleepFallbackDoesNotLoseManualValues() {
+        fetcher.start()
+        answerDay()
+        val nineLocal = ms("2026-11-16T03:30:00Z")
+        fetcher.handle(reply(2, 9, bytes(0, 75) + le32(CrpRingTime.toDeviceSeconds(nineLocal, zone))))
+        fetcher.handle(reply(2, 11, bytes(0)))
+        repeat(3) { fetcher.onTimeout() } // 7,4 and then 2,14 are not answered
+        assertTrue(fetcher.isFinished)
+        assertEquals(listOf(CrpRingValueSample(nineLocal, 75)), fetcher.result.heartRate)
     }
 }

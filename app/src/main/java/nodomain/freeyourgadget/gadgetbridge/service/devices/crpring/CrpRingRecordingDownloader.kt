@@ -20,7 +20,9 @@ class CrpRingRecording(val name: String, val data: ByteArray)
 
 /**
  * Downloads the voice notes that are not yet in [alreadyDownloaded], one at a time, as the
- * vendor app does: list → size → chunks of 4096 bytes (data on fdd6) → CRC. The caller gives
+ * vendor app does: storage check → recording state → list → size → chunks of 4096 bytes (data
+ * on fdd6) → CRC. Bands with no storage (stream-only) and bands that record at the moment are
+ * skipped; [skipReason] then says why. The caller gives
  * group 10 replies to [handle], fdd6 bytes to [onData], and calls [onTimeout] when the band
  * is silent. Not thread-safe.
  */
@@ -31,10 +33,10 @@ class CrpRingRecordingDownloader(
     companion object {
         const val CHUNK_SIZE = 4096
         /** 100 minutes at 16 kbit/s is 12 MB; anything far above that is not a voice note. */
-        const val MAX_FILE_SIZE = 64L * 1024 * 1024
+        const val MAX_FILE_SIZE = 16L * 1024 * 1024
     }
 
-    private enum class State { IDLE, LISTING, SIZE, DATA, CRC, DONE }
+    private enum class State { IDLE, STORAGE, RECORDING_STATE, LISTING, SIZE, DATA, CRC, DONE }
 
     private var state = State.IDLE
     private val listed = ArrayList<String>()
@@ -52,14 +54,39 @@ class CrpRingRecordingDownloader(
     val failed = mutableListOf<String>()
     val isFinished: Boolean get() = state == State.DONE
 
+    /** Set when the download did not run at all. */
+    var skipReason: String? = null
+        private set
+
     fun start() {
-        state = State.LISTING
-        send(CrpRingRecordingCommands.listFiles())
+        state = State.STORAGE
+        send(CrpRingRecordingCommands.queryStorage())
     }
 
     fun handle(message: CrpRingMessage): Boolean {
         if (message.group != CrpRingRecordingCommands.GROUP) return false
         return when (state) {
+            State.STORAGE -> {
+                if (message.command != CrpRingRecordingCommands.CMD_STORAGE || message.payload.isEmpty()) return false
+                if (message.payload[0].toInt() == 1) {
+                    state = State.RECORDING_STATE
+                    send(CrpRingRecordingCommands.queryState())
+                } else {
+                    skip("the band has no file storage (stream-only)")
+                }
+                true
+            }
+            State.RECORDING_STATE -> {
+                if (message.command != CrpRingRecordingCommands.CMD_STATE) return false
+                val recordingState = CrpRingRecordingParsers.recordingState(message.payload) ?: return true
+                if (recordingState == 0) {
+                    state = State.LISTING
+                    send(CrpRingRecordingCommands.listFiles())
+                } else {
+                    skip("a recording is in progress (state $recordingState)")
+                }
+                true
+            }
             State.LISTING -> {
                 if (message.command != CrpRingRecordingCommands.CMD_LIST_FILES) return false
                 val page = CrpRingRecordingParsers.fileListPage(message.payload) ?: return true
@@ -100,10 +127,16 @@ class CrpRingRecordingDownloader(
 
     fun onTimeout() {
         when (state) {
+            State.STORAGE, State.RECORDING_STATE -> skip("no reply to the storage or recording state check")
             State.LISTING -> startDownloads()
             State.SIZE, State.DATA, State.CRC -> failCurrent(sendEnd = true)
             else -> {}
         }
+    }
+
+    private fun skip(reason: String) {
+        skipReason = reason
+        state = State.DONE
     }
 
     private fun startDownloads() {
@@ -148,7 +181,8 @@ class CrpRingRecordingDownloader(
             buffer = ByteArray(0)
             startNext()
         } else {
-            failCurrent(sendEnd = true)
+            // The vendor app sends no end command after a failed CRC.
+            failCurrent(sendEnd = false)
         }
     }
 

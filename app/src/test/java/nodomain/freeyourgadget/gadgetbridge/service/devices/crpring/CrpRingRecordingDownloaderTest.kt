@@ -19,6 +19,8 @@ package nodomain.freeyourgadget.gadgetbridge.service.devices.crpring
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -32,30 +34,72 @@ class CrpRingRecordingDownloaderTest {
         reply(3, bytes(names.size, 0, remaining, 0) + names.fold(ByteArray(0)) { acc, n -> acc + name15(n) })
     private fun size(name: String, size: Int) = reply(5, bytes(1) + le32(size) + name15(name))
     private fun info(name: String, size: Int) = reply(5, bytes(2) + le32(size) + name15(name))
-    private fun crcResult(name: String, ok: Boolean) = reply(5, bytes(3, if (ok) 1 else 0) + name15(name))
+    private fun crcResult(name: String, result: Int) = reply(5, bytes(3, result) + name15(name))
+    private fun storage(has: Boolean) = reply(11, bytes(if (has) 1 else 0))
+    private fun state(state: Int) = reply(0, bytes(state, 0, 0, 0, 0, 0, 0, 0, 0))
 
     private fun downloader(done: Set<String> = emptySet()) = CrpRingRecordingDownloader(done) { sent.add(it) }
 
+    /** Starts the downloader and passes the storage and recording state checks. */
+    private fun started(done: Set<String> = emptySet()) = downloader(done).also {
+        it.start()
+        assertTrue(it.handle(storage(true)))
+        assertTrue(it.handle(state(0)))
+    }
+
     @Test
-    fun startListsFiles() {
+    fun startChecksStorageThenStateThenLists() {
         val d = downloader()
         d.start()
+        assertArrayEquals(CrpRingRecordingCommands.queryStorage(), sent.last())
+        d.handle(storage(true))
+        assertArrayEquals(CrpRingRecordingCommands.queryState(), sent.last())
+        d.handle(state(0))
         assertArrayEquals(CrpRingRecordingCommands.listFiles(), sent.last())
     }
 
     @Test
-    fun emptyListFinishes() {
+    fun noStorageSkipsTheDownload() {
         val d = downloader()
         d.start()
+        d.handle(storage(false))
+        assertTrue(d.isFinished)
+        assertNotNull(d.skipReason)
+        assertEquals(1, sent.size)
+    }
+
+    @Test
+    fun recordingInProgressSkipsTheDownload() {
+        val d = downloader()
+        d.start()
+        d.handle(storage(true))
+        d.handle(state(1))
+        assertTrue(d.isFinished)
+        assertNotNull(d.skipReason)
+        assertEquals(2, sent.size)
+    }
+
+    @Test
+    fun noReplyToTheChecksSkipsTheDownload() {
+        val d = downloader()
+        d.start()
+        d.onTimeout()
+        assertTrue(d.isFinished)
+        assertNotNull(d.skipReason)
+    }
+
+    @Test
+    fun emptyListFinishes() {
+        val d = started()
         assertTrue(d.handle(list()))
         assertTrue(d.isFinished)
+        assertNull(d.skipReason)
     }
 
     @Test
     fun downloadsOneFileInChunks() {
         val data = ByteArray(5000) { (it % 251).toByte() }
-        val d = downloader()
-        d.start()
+        val d = started()
         d.handle(list("A.opus"))
         assertArrayEquals(CrpRingRecordingCommands.querySize("A.opus"), sent.last())
         d.handle(size("A.opus", 5000))
@@ -68,7 +112,7 @@ class CrpRingRecordingDownloaderTest {
         d.onData(data.copyOfRange(4096, 5000))
         assertArrayEquals(CrpRingRecordingCommands.sendCrc("A.opus", CrpRingCrc16.compute(data)), sent.last())
         assertFalse(d.isFinished)
-        d.handle(crcResult("A.opus", true))
+        d.handle(crcResult("A.opus", 1))
         assertTrue(d.isFinished)
         assertEquals(1, d.finished.size)
         assertEquals("A.opus", d.finished[0].name)
@@ -77,18 +121,17 @@ class CrpRingRecordingDownloaderTest {
 
     @Test
     fun skipsFilesAlreadyDownloaded() {
-        val d = downloader(setOf("A.opus"))
-        d.start()
+        val d = started(setOf("A.opus"))
         d.handle(list("A.opus", "B.opus"))
         assertArrayEquals(CrpRingRecordingCommands.querySize("B.opus"), sent.last())
     }
 
     @Test
     fun listOverSeveralFrames() {
-        val d = downloader()
-        d.start()
+        val d = started()
+        val before = sent.size
         assertTrue(d.handle(list("A.opus", remaining = 1)))
-        assertEquals(1, sent.size)
+        assertEquals(before, sent.size)
         assertTrue(d.handle(list("B.opus")))
         assertArrayEquals(CrpRingRecordingCommands.querySize("A.opus"), sent.last())
         assertEquals(listOf("A.opus", "B.opus"), d.queued)
@@ -96,23 +139,32 @@ class CrpRingRecordingDownloaderTest {
 
     @Test
     fun crcFailureDropsTheFileAndContinues() {
-        val d = downloader()
-        d.start()
+        val d = started()
         d.handle(list("A.opus", "B.opus"))
         d.handle(size("A.opus", 4))
         d.handle(info("A.opus", 4))
         d.onData(bytes(1, 2, 3, 4))
-        d.handle(crcResult("A.opus", false))
+        d.handle(crcResult("A.opus", 0))
         assertTrue(d.finished.isEmpty())
         assertEquals(listOf("A.opus"), d.failed)
         assertArrayEquals(CrpRingRecordingCommands.querySize("B.opus"), sent.last())
-        assertArrayEquals(CrpRingRecordingCommands.endTransfer("A.opus", false), sent[sent.size - 2])
+    }
+
+    @Test
+    fun crcResultFfIsAFailure() {
+        // The vendor reads the result as a signed byte: 0xFF is -1, so a failure.
+        val d = started()
+        d.handle(list("A.opus"))
+        d.handle(size("A.opus", 4))
+        d.onData(bytes(1, 2, 3, 4))
+        d.handle(crcResult("A.opus", 0xFF))
+        assertTrue(d.finished.isEmpty())
+        assertEquals(listOf("A.opus"), d.failed)
     }
 
     @Test
     fun missingFileIsSkipped() {
-        val d = downloader()
-        d.start()
+        val d = started()
         d.handle(list("A.opus"))
         d.handle(size("A.opus", 0))
         assertEquals(listOf("A.opus"), d.failed)
@@ -120,20 +172,28 @@ class CrpRingRecordingDownloaderTest {
     }
 
     @Test
+    fun oversizedFileIsSkipped() {
+        val d = started()
+        d.handle(list("A.opus"))
+        d.handle(size("A.opus", (CrpRingRecordingDownloader.MAX_FILE_SIZE + 1).toInt()))
+        assertEquals(listOf("A.opus"), d.failed)
+        assertEquals(16L * 1024 * 1024, CrpRingRecordingDownloader.MAX_FILE_SIZE)
+    }
+
+    @Test
     fun timeoutDuringTransferEndsItAndContinues() {
-        val d = downloader()
-        d.start()
+        val d = started()
         d.handle(list("A.opus", "B.opus"))
         d.handle(size("A.opus", 4))
         d.onTimeout()
         assertEquals(listOf("A.opus"), d.failed)
         assertArrayEquals(CrpRingRecordingCommands.querySize("B.opus"), sent.last())
+        assertArrayEquals(CrpRingRecordingCommands.endTransfer("A.opus", false), sent[sent.size - 2])
     }
 
     @Test
     fun timeoutDuringListUsesTheNamesSoFar() {
-        val d = downloader()
-        d.start()
+        val d = started()
         d.handle(list("A.opus", remaining = 2))
         d.onTimeout()
         assertArrayEquals(CrpRingRecordingCommands.querySize("A.opus"), sent.last())
@@ -141,8 +201,7 @@ class CrpRingRecordingDownloaderTest {
 
     @Test
     fun extraDataIsCutAtTheChunkSize() {
-        val d = downloader()
-        d.start()
+        val d = started()
         d.handle(list("A.opus"))
         d.handle(size("A.opus", 3))
         d.handle(info("A.opus", 3))
@@ -152,8 +211,7 @@ class CrpRingRecordingDownloaderTest {
 
     @Test
     fun repliesForAnotherFileAreIgnored() {
-        val d = downloader()
-        d.start()
+        val d = started()
         d.handle(list("A.opus"))
         assertFalse(d.handle(size("B.opus", 10)))
         assertFalse(d.handle(CrpRingMessage(2, 18, bytes(0))))

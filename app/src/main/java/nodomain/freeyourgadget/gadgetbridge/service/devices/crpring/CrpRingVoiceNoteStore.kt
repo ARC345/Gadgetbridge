@@ -26,6 +26,9 @@ import nodomain.freeyourgadget.gadgetbridge.impl.GBDevice
 import nodomain.freeyourgadget.gadgetbridge.util.FileUtils
 import org.slf4j.LoggerFactory
 import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
+import java.io.OutputStream
 
 /**
  * Saves downloaded voice notes. Each note becomes an Ogg Opus file in Music/Gadgetbridge/Voice
@@ -44,17 +47,18 @@ object CrpRingVoiceNoteStore {
         GBApplication.getDeviceSpecificSharedPrefs(device.address)
             .getStringSet(PREF_DOWNLOADED, emptySet())?.toSet() ?: emptySet()
 
-    /** Returns true if the note was saved and marked as downloaded. */
+    /** Returns true if the note was saved and marked as downloaded. Never throws. */
     fun save(context: Context, device: GBDevice, recording: CrpRingRecording): Boolean {
-        val base = recording.name.substringBeforeLast('.').ifEmpty { recording.name }
+        val safeName = CrpRingRecordingParsers.safeFileName(recording.name)
+        val base = safeName.substringBeforeLast('.').ifEmpty { safeName }
         if (recording.data.size % PACKET_SIZE != 0) {
             LOG.warn("Voice note {} is {} bytes, not a whole number of {}-byte packets", recording.name, recording.data.size, PACKET_SIZE)
         }
-        saveRaw(recording)
-        val ogg = OggOpusWriter.fromRawPackets(recording.data, PACKET_SIZE, SAMPLE_RATE, 1)
+        saveRaw(safeName, recording.data)
         val saved = try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) saveToMusic(context, "$base.ogg", ogg) else saveToAppFolder("$base.ogg", ogg)
-        } catch (e: Exception) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) saveToMusic(context, "$base.ogg", recording.data) else saveToAppFolder("$base.ogg", recording.data)
+        } catch (e: Throwable) {
+            // Also catches OutOfMemoryError: a very long note must not crash the app.
             LOG.error("Failed to save voice note {}", recording.name, e)
             false
         }
@@ -62,15 +66,18 @@ object CrpRingVoiceNoteStore {
         return saved
     }
 
-    private fun saveRaw(recording: CrpRingRecording) {
+    private fun saveRaw(fileName: String, data: ByteArray) {
         try {
             val dir = File(FileUtils.getExternalFilesDir(), "voice-notes-raw")
             dir.mkdirs()
-            File(dir, recording.name).writeBytes(recording.data)
-        } catch (e: Exception) {
-            LOG.warn("Failed to keep the raw voice note {}", recording.name, e)
+            File(dir, fileName).writeBytes(data)
+        } catch (e: Throwable) {
+            LOG.warn("Failed to keep the raw voice note {}", fileName, e)
         }
     }
+
+    private fun writeOgg(data: ByteArray, out: OutputStream) =
+        OggOpusWriter.write(data, PACKET_SIZE, SAMPLE_RATE, 1, out)
 
     private fun saveToMusic(context: Context, fileName: String, data: ByteArray): Boolean {
         val resolver = context.contentResolver
@@ -82,10 +89,17 @@ object CrpRingVoiceNoteStore {
         }
         val uri = resolver.insert(MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY), values)
             ?: return false
-        resolver.openOutputStream(uri)?.use { it.write(data) } ?: return false
-        values.clear()
-        values.put(MediaStore.MediaColumns.IS_PENDING, 0)
-        resolver.update(uri, values, null, null)
+        try {
+            val stream = resolver.openOutputStream(uri) ?: throw IOException("No output stream for $uri")
+            stream.use { writeOgg(data, it) }
+            values.clear()
+            values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+            if (resolver.update(uri, values, null, null) != 1) throw IOException("Could not publish $uri")
+        } catch (e: Throwable) {
+            // Remove the pending entry, so a retry does not make "name (1).ogg".
+            try { resolver.delete(uri, null, null) } catch (ignored: Throwable) {}
+            throw e
+        }
         LOG.info("Saved voice note {} to {}", fileName, uri)
         return true
     }
@@ -93,7 +107,13 @@ object CrpRingVoiceNoteStore {
     private fun saveToAppFolder(fileName: String, data: ByteArray): Boolean {
         val dir = File(FileUtils.getExternalFilesDir(), "voice-notes")
         dir.mkdirs()
-        File(dir, fileName).writeBytes(data)
+        val file = File(dir, fileName)
+        try {
+            FileOutputStream(file).use { writeOgg(data, it) }
+        } catch (e: Throwable) {
+            file.delete()
+            throw e
+        }
         LOG.info("Saved voice note {} to {}", fileName, dir)
         return true
     }

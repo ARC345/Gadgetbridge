@@ -18,12 +18,16 @@ package nodomain.freeyourgadget.gadgetbridge.service.devices.crpring
 
 data class CrpRingFileListPage(val names: List<String>, val remaining: Int)
 
-/** A 10,5 reply: kind 1 = file size, 2 = chunk size, 3 = CRC result (value > 0 is OK), 0 = state. */
+/**
+ * A 10,5 reply: kind 1 = file size, 2 = chunk size, 3 = CRC result, 0 = state. For kinds 3 and 0
+ * the value is the signed result byte, as the vendor reads it: value > 0 is OK, 0xFF (-1) is not.
+ */
 data class CrpRingTransferReply(val kind: Int, val value: Long, val name: String)
 
 /** Group 10: voice note files on the band. A file name is always 15 bytes, padded with zeros. */
 object CrpRingRecordingCommands {
     const val GROUP = 10
+    const val CMD_STATE = 0
     const val CMD_LIST_FILES = 3
     const val CMD_TRANSFER = 5
     const val CMD_STORAGE = 11
@@ -33,6 +37,8 @@ object CrpRingRecordingCommands {
     private fun le32(value: Int) = byteArrayOf(value.toByte(), (value shr 8).toByte(), (value shr 16).toByte(), (value shr 24).toByte())
 
     fun listFiles(): ByteArray = CrpRingFrame.build(GROUP, CMD_LIST_FILES)
+
+    fun queryState(): ByteArray = CrpRingFrame.build(GROUP, CMD_STATE)
 
     fun queryStorage(): ByteArray = CrpRingFrame.build(GROUP, CMD_STORAGE)
 
@@ -74,11 +80,20 @@ object CrpRingRecordingParsers {
         return CrpRingFileListPage(names, u16(payload, 2))
     }
 
+    /** 10,0: [state, u32, u32, (u32)]. State 0 = none, 1 = recording, 2 = paused. */
+    fun recordingState(payload: ByteArray): Int? = if (payload.size < 9) null else u8(payload, 0)
+
+    /** A band file name made safe for the file system: no path parts, no unusual characters. */
+    fun safeFileName(name: String): String {
+        val safe = name.replace(Regex("[^A-Za-z0-9._-]"), "_")
+        return if (safe.isEmpty() || safe.all { it == '.' }) "voice-note" else safe
+    }
+
     fun transferReply(payload: ByteArray): CrpRingTransferReply? {
         if (payload.isEmpty()) return null
         return when (val kind = u8(payload, 0)) {
             1, 2 -> name(payload, 5)?.let { CrpRingTransferReply(kind, u32(payload, 1), it) }
-            0, 3 -> name(payload, 2)?.let { CrpRingTransferReply(kind, u8(payload, 1).toLong(), it) }
+            0, 3 -> name(payload, 2)?.let { CrpRingTransferReply(kind, payload[1].toLong(), it) }
             else -> null
         }
     }
