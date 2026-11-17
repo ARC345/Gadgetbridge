@@ -86,6 +86,9 @@ object CrpRingConstants {
     const val HISTORY_DAYS = 7
     const val MTU = 512
 
+    /** Device setting: open Gemini with each new voice note, with no tap. */
+    const val PREF_VOICE_NOTES_AUTO_GEMINI = "crpring_voice_notes_auto_gemini"
+
     val HEART_RATE_RANGE = 40..200
     val SPO2_RANGE = 1..100
 }

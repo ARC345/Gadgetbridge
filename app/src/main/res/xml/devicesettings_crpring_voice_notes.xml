@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.preference.PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <SwitchPreferenceCompat
+        android:defaultValue="true"
+        android:icon="@drawable/ic_send"
+        android:key="crpring_voice_notes_auto_gemini"
+        android:summary="@string/crpring_pref_auto_gemini_summary"
+        android:title="@string/crpring_pref_auto_gemini_title" />
+
+</androidx.preference.PreferenceScreen>

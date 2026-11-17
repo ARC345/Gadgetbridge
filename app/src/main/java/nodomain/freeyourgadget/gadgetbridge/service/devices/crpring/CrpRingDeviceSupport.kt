@@ -71,6 +71,8 @@ class CrpRingDeviceSupport : AbstractBTLESingleDeviceSupport(LOG) {
     private var fetcher: CrpRingHistoryFetcher? = null
     private var downloader: CrpRingRecordingDownloader? = null
     private val savedVoiceNotes = AtomicInteger()
+    /** Notes saved in this sync; used only on the save thread. */
+    private val newVoiceNotes = ArrayList<SavedVoiceNote>()
     /** Saving a note (Ogg build, file and MediaStore writes) runs here, not on the Bluetooth thread. */
     private val saveExecutor = Executors.newSingleThreadExecutor()
     private val downloadTimeout = Runnable { onDownloadTimeout() }
@@ -361,6 +363,7 @@ class CrpRingDeviceSupport : AbstractBTLESingleDeviceSupport(LOG) {
     /** Call with [lock] held. */
     private fun startVoiceNoteDownload() {
         savedVoiceNotes.set(0)
+        saveExecutor.execute { newVoiceNotes.clear() }
         val active = CrpRingRecordingDownloader(CrpRingVoiceNoteStore.downloadedNames(device)) { frame ->
             send("Download voice notes", frame)
         }
@@ -379,7 +382,7 @@ class CrpRingDeviceSupport : AbstractBTLESingleDeviceSupport(LOG) {
                 val saved = CrpRingVoiceNoteStore.save(context, device, recording)
                 if (saved != null) {
                     savedVoiceNotes.incrementAndGet()
-                    CrpRingVoiceNoteShare.notifyNewNote(context, saved.fileName, saved.uri)
+                    newVoiceNotes.add(saved)
                 }
             }
         }
@@ -398,6 +401,10 @@ class CrpRingDeviceSupport : AbstractBTLESingleDeviceSupport(LOG) {
             if (saved > 0) {
                 GB.toast(context, context.resources.getQuantityString(R.plurals.crpring_voice_notes_saved, saved, saved), Toast.LENGTH_LONG, GB.INFO)
             }
+            val autoSend = GBApplication.getDeviceSpecificSharedPrefs(device.address)
+                .getBoolean(CrpRingConstants.PREF_VOICE_NOTES_AUTO_GEMINI, true)
+            CrpRingVoiceNoteShare.deliver(context, ArrayList(newVoiceNotes), autoSend)
+            newVoiceNotes.clear()
             endBusyTask()
         }
     }
