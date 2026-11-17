@@ -67,7 +67,7 @@ object CrpRingParsers {
 
     /**
      * Each entry starts a stage that ends at the next entry. The last entry has no end, so it
-     * is not returned. A clock time before the previous one is on the next date. The first
+     * is not returned. An hour lower than the previous hour is on the next date. The first
      * entry is on the date before the day if its hour is 12 or more.
      */
     fun sleepStages(sleep: CrpRingSleep, nowMillis: Long, zone: ZoneId): List<CrpRingSleepStage> {
@@ -76,11 +76,12 @@ object CrpRingParsers {
         if (entries.any { it.hour > 23 || it.minute > 59 }) return emptyList()
         val anchor = Instant.ofEpochMilli(nowMillis).atZone(zone).toLocalDate().minusDays(sleep.day.toLong())
         var date = if (entries[0].hour >= 12) anchor.minusDays(1) else anchor
-        var previousMinuteOfDay = -1
+        var previousHour = -1
         val starts = entries.map { entry ->
-            val minuteOfDay = entry.hour * 60 + entry.minute
-            if (previousMinuteOfDay >= 0 && minuteOfDay < previousMinuteOfDay) date = date.plusDays(1)
-            previousMinuteOfDay = minuteOfDay
+            // As in the vendor app: only a lower hour moves to the next date. A clock time a few
+            // minutes back in the same hour gives a negative stage, which is dropped below.
+            if (previousHour >= 0 && entry.hour < previousHour) date = date.plusDays(1)
+            previousHour = entry.hour
             date.atTime(entry.hour, entry.minute).atZone(zone).toInstant().toEpochMilli()
         }
         val stages = ArrayList<CrpRingSleepStage>()

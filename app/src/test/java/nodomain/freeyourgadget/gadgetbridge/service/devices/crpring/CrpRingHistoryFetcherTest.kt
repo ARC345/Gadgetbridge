@@ -160,4 +160,35 @@ class CrpRingHistoryFetcherTest {
         emptyReplies().forEach { fetcher.handle(it) }
         assertFalse(fetcher.handle(reply(2, 11, bytes(0))))
     }
+
+    @Test
+    fun cancelStopsTheFetch() {
+        fetcher.start()
+        fetcher.cancel()
+        assertTrue(fetcher.isFinished)
+        fetcher.onTimeout()
+        assertFalse(fetcher.handle(reply(2, 18, bytes(0))))
+        assertEquals(1, sent.size)
+    }
+
+    @Test
+    fun threeTimeoutsInARowStopTheFetch() {
+        fetcher.start()
+        repeat(3) { fetcher.onTimeout() }
+        assertTrue(fetcher.isFinished)
+        assertTrue(fetcher.abortedAfterTimeouts)
+        assertEquals(3, sent.size)
+    }
+
+    @Test
+    fun aReplyResetsTheTimeoutCount() {
+        fetcher.start()
+        fetcher.onTimeout()
+        fetcher.onTimeout()
+        assertTrue(fetcher.handle(reply(2, 15, bytes(0, 0))))
+        fetcher.onTimeout()
+        fetcher.onTimeout()
+        assertFalse(fetcher.isFinished)
+        assertFalse(fetcher.abortedAfterTimeouts)
+    }
 }

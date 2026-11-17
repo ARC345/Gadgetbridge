@@ -18,6 +18,7 @@ package nodomain.freeyourgadget.gadgetbridge.service.devices.crpring
 
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCharacteristic
+import android.bluetooth.BluetoothProfile
 import android.content.Intent
 import android.os.Handler
 import android.os.Looper
@@ -56,6 +57,7 @@ class CrpRingDeviceSupport : AbstractBTLESingleDeviceSupport(LOG) {
         private val LOG = LoggerFactory.getLogger(CrpRingDeviceSupport::class.java)
         private const val FETCH_STEP_TIMEOUT_MILLIS = 5_000L
         private const val MEASUREMENT_TIMEOUT_MILLIS = 60_000L
+        private const val AUTH_TIMEOUT_MILLIS = 5_000L
     }
 
     private val lock = Any()
@@ -65,6 +67,11 @@ class CrpRingDeviceSupport : AbstractBTLESingleDeviceSupport(LOG) {
     private var chunkSize = 20
     private val fetchTimeout = Runnable { onFetchStepTimeout() }
     private val measurementTimeout = Runnable { stopHeartRateMeasurement() }
+    private val postAuth = CrpRingPostAuth { sendTimeAndUserInfo() }
+    private val authTimeout = Runnable {
+        LOG.info("No PIN reply, sending time and user info anyway")
+        postAuth.onTimeout()
+    }
 
     init {
         addSupportedService(CrpRingConstants.UUID_SERVICE)
@@ -81,11 +88,43 @@ class CrpRingDeviceSupport : AbstractBTLESingleDeviceSupport(LOG) {
         builder.notify(GattCharacteristic.CHARACTERISTIC_BATTERY_LEVEL.uuid, true)
         builder.read(GattCharacteristic.CHARACTERISTIC_BATTERY_LEVEL.uuid)
         write(builder, CrpRingCommands.firmwareVersion())
+        // Time and user info follow the PIN reply (see CrpRingPostAuth), as in the vendor app.
+        postAuth.reset()
         write(builder, CrpRingCommands.sendPin(getOrCreatePin()))
+        builder.setDeviceState(GBDevice.State.INITIALIZED)
+        handler.removeCallbacks(authTimeout)
+        handler.postDelayed(authTimeout, AUTH_TIMEOUT_MILLIS)
+        return builder
+    }
+
+    override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
+        if (newState != BluetoothProfile.STATE_CONNECTED) stopConnectionWork()
+        super.onConnectionStateChange(gatt, status, newState)
+    }
+
+    /** The link is gone: stop the fetch and the timers, so nothing waits in the write queue. */
+    private fun stopConnectionWork() {
+        handler.removeCallbacks(fetchTimeout)
+        handler.removeCallbacks(authTimeout)
+        handler.removeCallbacks(measurementTimeout)
+        synchronized(lock) {
+            val active = fetcher
+            if (active != null) {
+                LOG.warn("Connection lost during the history fetch, stopping it")
+                active.cancel()
+                fetcher = null
+                device.unsetBusyTask()
+                device.sendDeviceUpdateIntent(context)
+            }
+            assembler.reset()
+        }
+    }
+
+    private fun sendTimeAndUserInfo() {
+        val builder = createTransactionBuilder("Set time and user info")
         write(builder, CrpRingCommands.setTime(System.currentTimeMillis(), ZoneId.systemDefault()))
         write(builder, userInfoCommand())
-        builder.setDeviceState(GBDevice.State.INITIALIZED)
-        return builder
+        builder.queue()
     }
 
     override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) {
@@ -206,6 +245,8 @@ class CrpRingDeviceSupport : AbstractBTLESingleDeviceSupport(LOG) {
     private fun handleAuth(payload: ByteArray) {
         val result = CrpRingParsers.authResult(payload) ?: return
         if (result.operation != CrpRingConstants.AUTH_SEND) return
+        handler.removeCallbacks(authTimeout)
+        postAuth.onAuthResult(result.isOk)
         if (result.isOk) {
             LOG.info("The band accepted the PIN")
         } else {
@@ -270,6 +311,7 @@ class CrpRingDeviceSupport : AbstractBTLESingleDeviceSupport(LOG) {
         handler.removeCallbacks(fetchTimeout)
         fetcher = null
         if (active.skipped.isNotEmpty()) LOG.warn("Skipped history steps: {}", active.skipped)
+        if (active.abortedAfterTimeouts) LOG.warn("The band stopped answering; the fetch ended early")
         CrpRingHistoryStore.save(device, context, active.result)
         device.unsetBusyTask()
         device.sendDeviceUpdateIntent(context)

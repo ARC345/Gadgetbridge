@@ -86,14 +86,16 @@ Notes:
   are two pages: 0 and 1. Request page 0, then page 1 after the page 0 reply. A value of 0,
   a heart rate outside 40–200, or SpO2 over 100 means "no value".
 - Sleep: stage 0 awake, 1 light, 2 deep, 3 REM. Each entry is the start of a stage. The
-  stage ends at the next entry. A clock time that is before the previous one is on the next
-  date. The first entry is on the previous date if its hour is 12 or more.
+  stage ends at the next entry. An hour lower than the previous hour is on the next date. A
+  stage with a negative length is dropped. The first entry is on the previous date if its hour is 12 or more.
 - Group 2 replies to "today" can hold zeros for the time that is still in the future.
 
 ### PIN
 
-The app makes a random 8-digit number and sends it as the PIN at each connection. If the
-band has a different PIN, the reply is not 0. The app then asks the user to erase the band.
+The app makes a random 8-digit number once (`bind_user_id` in its private settings) and sends
+it as the PIN at each connection. If the band has a different PIN, the reply is not 0. The app
+then asks the user to erase the band. The PIN is plain text in the BLE traffic, so an HCI snoop
+log of the app shows it.
 
 ## Design
 
@@ -135,7 +137,9 @@ structure of other drivers. Other bands with the same SDK can use it later.
 3. PIN: send `{1, n, PIN}`. The PIN comes from the device preference "Auth key". If the
    preference is empty, Gadgetbridge makes an 8-digit PIN and saves it.
    If the reply is not 0, log it and show a toast. Phase 1 does not erase the band.
-4. Send time (`1,1`) and user info (`1,0`) from the Gadgetbridge user profile.
+4. After the PIN reply is OK, send time (`1,1`) and user info (`1,0`) from the Gadgetbridge
+   user profile. If no PIN reply comes in 5 s, send them anyway (the vendor app does the same).
+   If the PIN is rejected, do not send them.
 5. Set the device to "initialized". A `3,6` battery reply is also accepted if it comes.
 
 A sleep entry with no next entry has no end time. Do not save it. The next fetch gets it.
@@ -150,7 +154,8 @@ For each day from 6 (oldest) to 0 (today):
 4. Timed SpO2 page 0, then page 1 (`2,17`).
 
 Then manual HR (`2,9`) and manual SpO2 (`2,11`) history. Each step waits for its reply
-with a 5 s timeout. A timeout skips that step and logs it. After the last step, save all
+with a 5 s timeout. A timeout skips that step and logs it. After 3 timeouts in a row, the
+fetch stops. If the connection drops, the fetch stops at once. After the last step, save all
 data in one transaction and send the "sync finished" signal.
 
 Do not save "today" values that are in the future. Do not save zero values.

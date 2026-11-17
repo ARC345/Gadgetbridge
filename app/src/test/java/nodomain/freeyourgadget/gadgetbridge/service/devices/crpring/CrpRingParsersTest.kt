@@ -154,4 +154,15 @@ class CrpRingParsersTest {
         assertArrayEquals(CrpRingFrame.build(1, 9, bytes(0)), CrpRingCommands.measureHeartRate(false))
         assertArrayEquals(CrpRingFrame.build(3, 3), CrpRingCommands.firmwareVersion())
     }
+
+    @Test
+    fun clockGoingBackWithinTheSameHourIsDropped() {
+        // 03:10 then 03:05: the vendor app drops the negative stage instead of adding a day.
+        val now = ms("2026-11-16T04:30:00Z")
+        val sleep = CrpRingParsers.sleep(bytes(0, 1, 3, 10, 2, 3, 5, 0, 4, 0))!!
+        assertEquals(
+            listOf(CrpRingSleepStage(ms("2026-11-15T21:35:00Z"), 55, CrpRingConstants.SLEEP_DEEP)),
+            CrpRingParsers.sleepStages(sleep, now, kolkata)
+        )
+    }
 }
