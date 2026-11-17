@@ -20,15 +20,21 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.provider.Settings
 import androidx.core.app.NotificationCompat
 import nodomain.freeyourgadget.gadgetbridge.R
 import nodomain.freeyourgadget.gadgetbridge.util.GB
+import org.slf4j.LoggerFactory
 
 /**
- * After a voice note is saved, a notification offers to send it to Gemini or to play it.
- * Android does not let a background app open another app by itself, so the user taps.
+ * Sends each new voice note to Gemini, one share per note. Gadgetbridge may open Gemini from
+ * the background because it has "Display over other apps" (it is also the companion app of
+ * the band). When it may not, when Gemini is missing, or when automatic sending is off, a
+ * notification offers "Send to Gemini" and "Play" instead.
  */
 object CrpRingVoiceNoteShare {
+    private val LOG = LoggerFactory.getLogger(CrpRingVoiceNoteShare::class.java)
+
     const val GEMINI_PACKAGE = "com.google.android.apps.bard"
     private const val MIME = "audio/ogg"
     private const val NOTIFICATION_TAG = "crpring_voice_note"
@@ -51,6 +57,24 @@ object CrpRingVoiceNoteShare {
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         return Intent.createChooser(plain, context.getString(R.string.crpring_voice_note_share))
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+
+    fun deliver(context: Context, notes: List<SavedVoiceNote>, autoSend: Boolean) {
+        val canOpen = autoSend && Settings.canDrawOverlays(context) &&
+            geminiIntent(Uri.EMPTY).resolveActivity(context.packageManager) != null
+        for (note in notes) {
+            if (canOpen && open(context, note)) continue
+            notifyNewNote(context, note.fileName, note.uri)
+        }
+    }
+
+    private fun open(context: Context, note: SavedVoiceNote): Boolean = try {
+        context.startActivity(geminiIntent(note.uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        LOG.info("Sent voice note {} to Gemini", note.fileName)
+        true
+    } catch (e: Exception) {
+        LOG.warn("Could not open Gemini for voice note {}", note.fileName, e)
+        false
     }
 
     fun playIntent(uri: Uri): Intent = Intent(Intent.ACTION_VIEW)

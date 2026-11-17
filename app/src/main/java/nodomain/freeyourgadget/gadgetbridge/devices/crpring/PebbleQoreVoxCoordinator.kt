@@ -17,6 +17,7 @@
 package nodomain.freeyourgadget.gadgetbridge.devices.crpring
 
 import nodomain.freeyourgadget.gadgetbridge.R
+import nodomain.freeyourgadget.gadgetbridge.impl.GBDevice
 import java.util.regex.Pattern
 
 /** Pebble Qore Vox: screenless band with voice recording. Syncs health data and voice notes. */
@@ -28,4 +29,7 @@ class PebbleQoreVoxCoordinator : AbstractCrpRingCoordinator() {
     override fun getDeviceNameResource(): Int = R.string.devicetype_pebble_qore_vox
 
     override fun supportsVoiceNotes(): Boolean = true
+
+    override fun getSupportedDeviceSpecificSettings(device: GBDevice): IntArray =
+        super.getSupportedDeviceSpecificSettings(device) + R.xml.devicesettings_crpring_voice_notes
 }

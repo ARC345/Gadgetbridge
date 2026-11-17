@@ -2427,6 +2427,8 @@
         <item quantity="one">%d voice note saved to Music/Gadgetbridge/Voice notes</item>
         <item quantity="other">%d voice notes saved to Music/Gadgetbridge/Voice notes</item>
     </plurals>
+    <string name="crpring_pref_auto_gemini_title">Send voice notes to Gemini automatically</string>
+    <string name="crpring_pref_auto_gemini_summary">Opens Gemini with each new voice note after a sync. When off, a notification offers to send it.</string>
     <string name="crpring_voice_note_title">New voice note from your band</string>
     <string name="crpring_voice_note_send_gemini">Send to Gemini</string>
     <string name="crpring_voice_note_play">Play</string>
