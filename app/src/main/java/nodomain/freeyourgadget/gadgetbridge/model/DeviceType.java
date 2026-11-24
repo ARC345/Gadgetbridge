@@ -519,6 +519,7 @@ import nodomain.freeyourgadget.gadgetbridge.devices.nothing.EarACoordinator;
 import nodomain.freeyourgadget.gadgetbridge.devices.nothing.EarStickCoordinator;
 import nodomain.freeyourgadget.gadgetbridge.devices.nut.NutCoordinator;
 import nodomain.freeyourgadget.gadgetbridge.devices.nxwear.NxWearB8Coordinator;
+import nodomain.freeyourgadget.gadgetbridge.devices.crpring.PebbleQoreVoxCoordinator;
 import nodomain.freeyourgadget.gadgetbridge.devices.ollee.OlleeDeviceCoordinator;
 import nodomain.freeyourgadget.gadgetbridge.devices.onemoresonoflow.OneMoreSonoFlowCoordinator;
 import nodomain.freeyourgadget.gadgetbridge.devices.onemoresonoflow.OneMoreSonoFlowSECoordinator;
@@ -1359,6 +1360,7 @@ public enum DeviceType {
     EIGHTBITDO_MICRO(EightBitDoMicroCoordinator::new),
     INNOVO_IP900BP_B(InnovoPulseOximeterCoordinator::new),
     AICARE_BROADCAST_SCALE(AicareBroadcastScaleCoordinator::new),
+    PEBBLE_QORE_VOX(PebbleQoreVoxCoordinator::new),
     TEST(TestDeviceCoordinator::new);
 
     private DeviceCoordinator coordinator;

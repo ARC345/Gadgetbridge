@@ -111,7 +111,7 @@ public class GBDaoGenerator {
             outputDir.mkdirs();
         }
 
-        final Schema schema = new Schema(161, MAIN_PACKAGE + ".entities");
+        final Schema schema = new Schema(163, MAIN_PACKAGE + ".entities");
 
         final List<Entity> sampleProvidersToGenerate = new LinkedList<>();
         final List<Entity> batterySampleProvidersToGenerate = new LinkedList<>();
@@ -240,6 +240,7 @@ public class GBDaoGenerator {
         sampleProvidersToGenerate.add(addMoyoungSleepStageSample(schema, user, device));
         sampleProvidersToGenerate.add(addMoyoungStressSample(schema, user, device));
         sampleProvidersToGenerate.add(addGloryFitStepsSample(schema, user, device));
+        sampleProvidersToGenerate.add(addCrpRingStepsSample(schema, user, device));
         sampleProvidersToGenerate.add(addStratos4ProStepsSample(schema, user, device));
         addKeephealthActivitySample(schema, user, device);
         addKeephealthBloodPressureSample(schema, user, device);
@@ -1574,6 +1575,13 @@ public class GBDaoGenerator {
         sleepStageSample.addIntProperty("walkingEnd").notNull();
         sleepStageSample.addIntProperty("walkingSteps").notNull();
         return sleepStageSample;
+    }
+
+    private static Entity addCrpRingStepsSample(Schema schema, Entity user, Entity device) {
+        Entity stepsSample = addEntity(schema, "CrpRingStepsSample");
+        addCommonTimeSampleProperties("AbstractTimeSample", stepsSample, user, device);
+        stepsSample.addIntProperty(SAMPLE_STEPS).notNull();
+        return stepsSample;
     }
 
     private static Entity addStratos4ProStepsSample(Schema schema, Entity user, Entity device) {

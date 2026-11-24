@@ -1503,6 +1503,8 @@
 
     <queries>
         <package android:name="com.google.android.apps.healthdata" />
+        <!-- Gemini, to send Pebble Qore Vox voice notes to it -->
+        <package android:name="com.google.android.apps.bard" />
 
         <!--
              This is required such that the app can query and resolve packages that have written
