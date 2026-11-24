@@ -25,7 +25,7 @@ jobs:
     # Run only on this fork, and only for master. Other branches must not
     # publish to the F-Droid repo, even when started by hand.
     if: github.repository == 'ARC345/Gadgetbridge' && github.ref == 'refs/heads/master'
-    runs-on: codeberg-medium-lazy
+    runs-on: codeberg-small-lazy
     container:
       image: codeberg.org/freeyourgadget/android-fdroid-tools:37.0.0-0
     env:
