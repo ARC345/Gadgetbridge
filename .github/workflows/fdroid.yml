@@ -42,8 +42,10 @@ jobs:
       - name: Install Android SDK packages
         run: |
           set -eu
-          yes | sdkmanager --licenses > /dev/null
-          sdkmanager "platforms;android-37.0" "build-tools;36.0.0"
+          # The command-line tools are not on PATH on this image. Use the full path.
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses > /dev/null
+          "$SDKMANAGER" "platforms;android-37.0" "build-tools;36.0.0"
 
       - name: Build signed nightly APK
         run: |
