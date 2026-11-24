@@ -1,0 +1,96 @@
+# Builds a signed nightly APK on each push to master on GitHub, builds an F-Droid
+# index, and publishes it to the Codeberg 'pages' branch:
+#   https://arc345.codeberg.page/Gadgetbridge/repo
+#
+# Secrets (repository secrets on GitHub):
+#   SIGNING_KEY, KEYSTOREPASS, KEYPASS  (same values as on Codeberg)
+#   PAGES_TOKEN                         (Codeberg token with write access)
+
+name: F-Droid nightly
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  fdroid:
+    # Forgejo also reads this folder. Run only on GitHub, and only for ARC345.
+    if: github.server_url == 'https://github.com' && github.repository == 'ARC345/Gadgetbridge' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    env:
+      SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+      KEYSTOREPASS: ${{ secrets.KEYSTOREPASS }}
+      KEYPASS: ${{ secrets.KEYPASS }}
+      PAGES_TOKEN: ${{ secrets.PAGES_TOKEN }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install Android SDK packages
+        run: |
+          set -eu
+          # The command-line tools are not on PATH on this image. Use the full path.
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses > /dev/null
+          "$SDKMANAGER" "platforms;android-37.0" "build-tools;36.0.0"
+
+      - name: Build signed nightly APK
+        run: |
+          set -eu
+          # The Gradle signing config reads 'keystore.p12' relative to the app module.
+          echo "$SIGNING_KEY" | base64 -d > app/keystore.p12
+          # Skip lint-vital analysis. It is not needed for the nightly APK.
+          ./gradlew assembleMainlineNightly --max-workers=4 \
+            -x :app:lintVitalAnalyzeMainlineNightly \
+            -Dnightly_store_file="keystore.p12" \
+            -Dnightly_store_password="$KEYSTOREPASS" \
+            -Dnightly_key_alias="gadgetbridge" \
+            -Dnightly_key_password="$KEYPASS"
+
+      - name: Build F-Droid repo index
+        run: |
+          set -eu
+          python3 -m venv "$HOME/fdroid-venv"
+          "$HOME/fdroid-venv/bin/pip" install fdroidserver
+          # PATH changes from GITHUB_PATH apply only to later steps. Export it here too.
+          export PATH="$HOME/fdroid-venv/bin:$PATH"
+          mkdir -p repo
+          find app/build/outputs/apk/mainline/nightly -name '*.apk' -exec cp {} repo/ \;
+          cat > config.yml <<EOF
+          repo_url: "https://arc345.codeberg.page/Gadgetbridge/repo"
+          repo_name: "Gadgetbridge (ARC345 nightly)"
+          repo_description: "Nightly builds of the ARC345 Gadgetbridge fork."
+          repo_keyalias: "gadgetbridge"
+          keystore: "app/keystore.p12"
+          keystorepass: "$KEYSTOREPASS"
+          keypass: "$KEYPASS"
+          EOF
+          fdroid update -c
+          fdroid update
+          ls -la repo
+
+      - name: Publish repo to Codeberg pages branch
+        run: |
+          set -eu
+          PAGES_DIR="$(mktemp -d)"
+          cp -r repo "$PAGES_DIR/repo"
+          cd "$PAGES_DIR"
+          git init -q -b pages
+          git config user.name "CI"
+          git config user.email "ci@users.noreply.github.com"
+          git add -A
+          git commit -q -m "F-Droid repo for $GITHUB_SHA"
+          git push -q -f "https://oauth2:${PAGES_TOKEN}@codeberg.org/ARC345/Gadgetbridge.git" pages
