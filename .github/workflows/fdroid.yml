@@ -65,7 +65,8 @@ jobs:
           set -eu
           python3 -m venv "$HOME/fdroid-venv"
           "$HOME/fdroid-venv/bin/pip" install fdroidserver
-          echo "$HOME/fdroid-venv/bin" >> "$GITHUB_PATH"
+          # PATH changes from GITHUB_PATH apply only to later steps. Export it here too.
+          export PATH="$HOME/fdroid-venv/bin:$PATH"
           mkdir -p repo
           find app/build/outputs/apk/mainline/nightly -name '*.apk' -exec cp {} repo/ \;
           cat > config.yml <<EOF
