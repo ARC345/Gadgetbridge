@@ -74,6 +74,7 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import nodomain.freeyourgadget.gadgetbridge.GBApplication;
+import nodomain.freeyourgadget.gadgetbridge.externalservices.liftosaur.LiftosaurWorkoutWatcher;
 import nodomain.freeyourgadget.gadgetbridge.R;
 import nodomain.freeyourgadget.gadgetbridge.externalevents.notifications.GoogleMapsNotificationHandler;
 import nodomain.freeyourgadget.gadgetbridge.externalevents.notifications.apps.CompiledNotificationAppConfig;
@@ -364,8 +365,15 @@ public class NotificationListener extends NotificationListenerService {
     }
 
     @Override
+    public void onNotificationRemoved(StatusBarNotification sbn, RankingMap rankingMap, int reason) {
+        LiftosaurWorkoutWatcher.onRemoved(sbn);
+        super.onNotificationRemoved(sbn, rankingMap, reason);
+    }
+
+    @Override
     public void onNotificationPosted(StatusBarNotification sbn, RankingMap rankingMap) {
         logNotification(sbn, true);
+        LiftosaurWorkoutWatcher.onPosted(sbn);
 
         notificationStack.remove(sbn.getPackageName());
         notificationStack.add(sbn.getPackageName());

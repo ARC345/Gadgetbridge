@@ -214,6 +214,20 @@ class CrpRingDeviceSupport : AbstractBTLESingleDeviceSupport(LOG) {
         handler.postDelayed(measurementTimeout, MEASUREMENT_TIMEOUT_MILLIS)
     }
 
+    override fun onSendConfiguration(config: String) {
+        when (config) {
+            CrpRingCommands.CONFIG_WORKOUT_START ->
+                send("Start workout", CrpRingCommands.startWorkout())
+
+            CrpRingCommands.CONFIG_WORKOUT_END -> {
+                send("Pause workout", CrpRingCommands.pauseWorkout())
+                send("End workout", CrpRingCommands.endWorkout())
+            }
+
+            else -> LOG.debug("Ignoring configuration {}", config)
+        }
+    }
+
     override fun onFetchRecordedData(dataTypes: Int) {
         synchronized(lock) {
             if (fetcher != null || downloader != null) {

@@ -21,6 +21,18 @@ import java.time.ZoneId
 
 /** Request frames sent to the band. */
 object CrpRingCommands {
+    /** Configuration keys that start and end a workout on the band. */
+    const val CONFIG_WORKOUT_START = "crp_workout_start"
+    const val CONFIG_WORKOUT_END = "crp_workout_end"
+
+    /** Workout type codes and states, as the Vox app sends them. */
+    const val WORKOUT_WEIGHT_LIFTING = 79
+    const val STATE_PAUSE = -2
+    const val STATE_END = -1
+    const val GOAL_TYPE_NONE = -1
+
+    private const val CMD_WORKOUT_STATE = 12
+
     private fun le32(value: Long) = byteArrayOf(
         value.toByte(), (value shr 8).toByte(), (value shr 16).toByte(), (value shr 24).toByte()
     )
@@ -75,6 +87,24 @@ object CrpRingCommands {
         CrpRingFrame.build(CrpRingConstants.GROUP_SLEEP, CrpRingConstants.CMD_SLEEP_SESSION_STAGES, byteArrayOf(id.toByte()))
     fun manualHeartRate(): ByteArray = query(CrpRingConstants.CMD_QUERY_MANUAL_HEART_RATE)
     fun manualSpo2(): ByteArray = query(CrpRingConstants.CMD_QUERY_MANUAL_SPO2)
+
+    /**
+     * Workout state frame (group 1, command 12). The payload is the state, the goal type and the goal
+     * value. A start sends the workout type in the state byte, such as [WORKOUT_WEIGHT_LIFTING].
+     */
+    fun workoutState(state: Int, goalType: Int = GOAL_TYPE_NONE, goalValue: Int = 0): ByteArray =
+        CrpRingFrame.build(
+            CrpRingConstants.GROUP_SET,
+            CMD_WORKOUT_STATE,
+            byteArrayOf(state.toByte(), goalType.toByte()) + le32(goalValue.toLong())
+        )
+
+    fun startWorkout(workoutType: Int = WORKOUT_WEIGHT_LIFTING): ByteArray = workoutState(workoutType)
+
+    /** The Vox app pauses a workout before it ends it, so the pause frame is sent first. */
+    fun pauseWorkout(): ByteArray = workoutState(STATE_PAUSE)
+
+    fun endWorkout(): ByteArray = workoutState(STATE_END)
 
     private fun query(command: Int, vararg payload: Byte): ByteArray =
         CrpRingFrame.build(CrpRingConstants.GROUP_QUERY, command, payload)
