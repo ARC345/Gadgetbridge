@@ -41,14 +41,23 @@ class CrpRingHistoryFetcherTest {
     private fun device(utcText: String) = CrpRingTime.toDeviceSeconds(ms(utcText), zone)
     private fun reply(group: Int, command: Int, payload: ByteArray) = CrpRingMessage(group, command, payload)
 
-    /** Replies for the steps of day 0: steps, HR page 0 and 1, SpO2 page 0 and 1. */
-    private fun dayReplies() = listOf(
-        reply(2, 18, bytes(0)),
-        reply(2, 15, bytes(0, 0)), reply(2, 15, bytes(0, 1)),
-        reply(2, 17, bytes(0, 0)), reply(2, 17, bytes(0, 1)),
+    /** Replies for the steps of a day up to SpO2: steps, HR page 0 and 1, SpO2 page 0 and 1. */
+    private fun repliesUntilHrv(day: Int = 0) = listOf(
+        reply(2, 18, bytes(day)),
+        reply(2, 15, bytes(day, 0)), reply(2, 15, bytes(day, 1)),
+        reply(2, 17, bytes(day, 0)), reply(2, 17, bytes(day, 1)),
     )
 
-    private fun answerDay() = dayReplies().forEach { assertTrue(fetcher.handle(it)) }
+    private fun hrvReplies(day: Int = 0) = (0..3).map { reply(2, 16, bytes(day, it)) }
+    private fun stressReplies(day: Int = 0) = (0..1).map { reply(2, 47, bytes(day, it)) }
+
+    /** Replies for the steps of a day: [repliesUntilHrv], HRV pages 0 to 3, stress pages 0 and 1. */
+    private fun dayReplies(day: Int = 0) = repliesUntilHrv(day) + hrvReplies(day) + stressReplies(day)
+
+    private fun answer(replies: List<CrpRingMessage>, target: CrpRingHistoryFetcher = fetcher) =
+        replies.forEach { assertTrue(target.handle(it)) }
+
+    private fun answerDay() = answer(dayReplies())
 
     @Test
     fun sendsRequestsInOrderAndFinishes() {
@@ -63,6 +72,9 @@ class CrpRingHistoryFetcherTest {
             CrpRingCommands.stepsDetails(0),
             CrpRingCommands.timedHeartRate(0, 0), CrpRingCommands.timedHeartRate(0, 1),
             CrpRingCommands.timedSpo2(0, 0), CrpRingCommands.timedSpo2(0, 1),
+            CrpRingCommands.timedHrv(0, 0), CrpRingCommands.timedHrv(0, 1),
+            CrpRingCommands.timedHrv(0, 2), CrpRingCommands.timedHrv(0, 3),
+            CrpRingCommands.timedStress(0, 0), CrpRingCommands.timedStress(0, 1),
             CrpRingCommands.manualHeartRate(), CrpRingCommands.manualSpo2(),
             CrpRingCommands.sleepSessions(),
         )
@@ -256,6 +268,91 @@ class CrpRingHistoryFetcherTest {
         assertArrayEquals(CrpRingCommands.sleepSessionStages(5), sent.last())
         assertTrue(fetcher.handle(reply(7, 6, bytes(5, 1, 23, 0, 0, 6, 0))))
         assertEquals(1, fetcher.result.sleep.size)
+    }
+
+    @Test
+    fun timedHrvUsesTheOffsetOfAllEarlierPages() {
+        fetcher.start()
+        answer(repliesUntilHrv())
+        assertTrue(fetcher.handle(reply(2, 16, bytes(0, 0, 40, 0, 0, 0))))
+        assertTrue(fetcher.handle(reply(2, 16, bytes(0, 1, 50, 0))))
+        assertTrue(fetcher.handle(reply(2, 16, bytes(0, 2, 0x2C, 0x01))))
+        assertTrue(fetcher.handle(reply(2, 16, bytes(0, 3))))
+        assertEquals(
+            listOf(
+                CrpRingValueSample(midnight, 40),
+                CrpRingValueSample(midnight + 2 * 5 * 60_000L, 50),
+                CrpRingValueSample(midnight + 3 * 5 * 60_000L, 300),
+            ),
+            fetcher.result.hrv
+        )
+    }
+
+    @Test
+    fun invalidHrvValuesAreDropped() {
+        fetcher.start()
+        answer(repliesUntilHrv())
+        fetcher.handle(reply(2, 16, bytes(0, 0, 0, 0, 0xFF, 0xFF, 35, 0)))
+        assertEquals(listOf(CrpRingValueSample(midnight + 2 * 5 * 60_000L, 35)), fetcher.result.hrv)
+    }
+
+    @Test
+    fun futureHrvSlotsAreDropped() {
+        fetcher.start()
+        answer(repliesUntilHrv())
+        val page0 = ByteArray(2 + 146 * 2)
+        for (i in 0 until 146) page0[2 + i * 2] = 40
+        fetcher.handle(reply(2, 16, page0))
+        // Slots 0..144 start at or before 12:00.
+        assertEquals(145, fetcher.result.hrv.size)
+        assertEquals(CrpRingValueSample(now, 40), fetcher.result.hrv.last())
+    }
+
+    @Test
+    fun timedStressIsStoredAndInvalidValuesAreDropped() {
+        fetcher.start()
+        answer(repliesUntilHrv() + hrvReplies())
+        assertTrue(fetcher.handle(reply(2, 47, bytes(0, 0, 20, 0, 101, 55))))
+        assertTrue(fetcher.handle(reply(2, 47, bytes(0, 1, 30))))
+        assertEquals(
+            listOf(
+                CrpRingValueSample(midnight, 20),
+                CrpRingValueSample(midnight + 3 * 5 * 60_000L, 55),
+                CrpRingValueSample(midnight + 4 * 5 * 60_000L, 30),
+            ),
+            fetcher.result.stress
+        )
+    }
+
+    @Test
+    fun unansweredHrvDropsTheOtherHrvSteps() {
+        val twoDays = CrpRingHistoryFetcher(now, zone, 2) { sent.add(it) }
+        twoDays.start()
+        answer(repliesUntilHrv(1), twoDays)
+        twoDays.onTimeout() // the band does not know 2,16
+        assertArrayEquals(CrpRingCommands.timedStress(1, 0), sent.last())
+        answer(stressReplies(1) + repliesUntilHrv(0), twoDays)
+        assertArrayEquals(CrpRingCommands.timedStress(0, 0), sent.last())
+    }
+
+    @Test
+    fun unansweredStressDropsTheOtherStressSteps() {
+        val twoDays = CrpRingHistoryFetcher(now, zone, 2) { sent.add(it) }
+        twoDays.start()
+        answer(repliesUntilHrv(1) + hrvReplies(1), twoDays)
+        twoDays.onTimeout() // the band does not know 2,47
+        assertArrayEquals(CrpRingCommands.stepsDetails(0), sent.last())
+        answer(repliesUntilHrv(0) + hrvReplies(0), twoDays)
+        assertArrayEquals(CrpRingCommands.manualHeartRate(), sent.last())
+    }
+
+    @Test
+    fun hrvTimeoutAfterAReplyOnlySkipsThatPage() {
+        val twoDays = CrpRingHistoryFetcher(now, zone, 2) { sent.add(it) }
+        twoDays.start()
+        answer(repliesUntilHrv(1) + hrvReplies(1).take(1), twoDays)
+        twoDays.onTimeout()
+        assertArrayEquals(CrpRingCommands.timedHrv(1, 2), sent.last())
     }
 
     @Test
