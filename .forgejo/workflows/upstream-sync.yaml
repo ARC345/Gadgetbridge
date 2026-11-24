@@ -19,7 +19,7 @@ jobs:
   sync:
     # Run only on this fork. The upstream repository has its own pipeline.
     if: github.repository == 'ARC345/Gadgetbridge'
-    runs-on: codeberg-small-lazy
+    runs-on: codeberg-medium-lazy
     container:
       image: node:22-bookworm
     env:
