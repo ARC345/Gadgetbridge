@@ -50,6 +50,19 @@ class CrpRingParsersTest {
     }
 
     @Test
+    fun page16ReadsUint16Values() {
+        // 2,16 (timed HRV): [day, page, u16 LE * n]
+        val result = CrpRingParsers.page16(bytes(2, 3, 45, 0, 0x02, 0x01))!!
+        assertEquals(CrpRingPage(2, 3, listOf(45, 258)), result)
+    }
+
+    @Test
+    fun page16RejectsAnOddValueLength() {
+        assertNull(CrpRingParsers.page16(bytes(2, 3, 45, 0, 7)))
+        assertNull(CrpRingParsers.page16(bytes(2)))
+    }
+
+    @Test
     fun timedValuesReadValueAndTimestamp() {
         val result = CrpRingParsers.timedValues(bytes(0, 72, 0x78, 0x56, 0x34, 0x12))!!
         assertEquals(listOf(CrpRingTimedValue(0x12345678L, 72)), result)
@@ -148,6 +161,8 @@ class CrpRingParsersTest {
         assertArrayEquals(CrpRingFrame.build(2, 14, bytes(3)), CrpRingCommands.sleep(3))
         assertArrayEquals(CrpRingFrame.build(2, 15, bytes(3, 1)), CrpRingCommands.timedHeartRate(3, 1))
         assertArrayEquals(CrpRingFrame.build(2, 17, bytes(3, 0)), CrpRingCommands.timedSpo2(3, 0))
+        assertArrayEquals(CrpRingFrame.build(2, 16, bytes(3, 2)), CrpRingCommands.timedHrv(3, 2))
+        assertArrayEquals(CrpRingFrame.build(2, 47, bytes(3, 1)), CrpRingCommands.timedStress(3, 1))
         assertArrayEquals(CrpRingFrame.build(2, 9), CrpRingCommands.manualHeartRate())
         assertArrayEquals(CrpRingFrame.build(2, 11), CrpRingCommands.manualSpo2())
         assertArrayEquals(CrpRingFrame.build(9, 2, bytes(1)), CrpRingCommands.findDevice(true))
