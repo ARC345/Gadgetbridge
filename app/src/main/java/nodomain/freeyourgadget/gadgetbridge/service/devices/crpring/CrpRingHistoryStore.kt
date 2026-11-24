@@ -20,12 +20,16 @@ import android.content.Context
 import nodomain.freeyourgadget.gadgetbridge.GBApplication
 import nodomain.freeyourgadget.gadgetbridge.devices.CrpRingStepsSampleProvider
 import nodomain.freeyourgadget.gadgetbridge.devices.GenericHeartRateSampleProvider
+import nodomain.freeyourgadget.gadgetbridge.devices.GenericHrvValueSampleProvider
 import nodomain.freeyourgadget.gadgetbridge.devices.GenericSleepStageSampleProvider
 import nodomain.freeyourgadget.gadgetbridge.devices.GenericSpo2SampleProvider
+import nodomain.freeyourgadget.gadgetbridge.devices.GenericStressSampleProvider
 import nodomain.freeyourgadget.gadgetbridge.entities.CrpRingStepsSample
 import nodomain.freeyourgadget.gadgetbridge.entities.GenericHeartRateSample
+import nodomain.freeyourgadget.gadgetbridge.entities.GenericHrvValueSample
 import nodomain.freeyourgadget.gadgetbridge.entities.GenericSleepStageSample
 import nodomain.freeyourgadget.gadgetbridge.entities.GenericSpo2Sample
+import nodomain.freeyourgadget.gadgetbridge.entities.GenericStressSample
 import nodomain.freeyourgadget.gadgetbridge.impl.GBDevice
 import org.slf4j.LoggerFactory
 
@@ -35,8 +39,8 @@ object CrpRingHistoryStore {
 
     fun save(device: GBDevice, context: Context, result: CrpRingHistoryResult) {
         LOG.info(
-            "Saving {} steps, {} heart rate, {} SpO2 and {} sleep samples",
-            result.steps.size, result.heartRate.size, result.spo2.size, result.sleep.size
+            "Saving {} steps, {} heart rate, {} SpO2, {} HRV, {} stress and {} sleep samples",
+            result.steps.size, result.heartRate.size, result.spo2.size, result.hrv.size, result.stress.size, result.sleep.size
         )
         try {
             GBApplication.acquireDB().use { db ->
@@ -51,6 +55,14 @@ object CrpRingHistoryStore {
                 )
                 GenericSpo2SampleProvider(device, session).persistSamples(
                     result.spo2.map { s -> GenericSpo2Sample().apply { timestamp = s.timestampMillis; spo2 = s.value } },
+                    context
+                )
+                GenericHrvValueSampleProvider(device, session).persistSamples(
+                    result.hrv.map { s -> GenericHrvValueSample().apply { timestamp = s.timestampMillis; value = s.value } },
+                    context
+                )
+                GenericStressSampleProvider(device, session).persistSamples(
+                    result.stress.map { s -> GenericStressSample().apply { timestamp = s.timestampMillis; stress = s.value } },
                     context
                 )
                 GenericSleepStageSampleProvider(device, session).persistSamples(

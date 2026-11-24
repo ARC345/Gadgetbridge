@@ -25,6 +25,8 @@ class CrpRingHistoryResult {
     val steps = mutableListOf<CrpRingValueSample>()
     val heartRate = mutableListOf<CrpRingValueSample>()
     val spo2 = mutableListOf<CrpRingValueSample>()
+    val hrv = mutableListOf<CrpRingValueSample>()
+    val stress = mutableListOf<CrpRingValueSample>()
     val sleep = mutableListOf<CrpRingSleepStage>()
 }
 
@@ -41,6 +43,13 @@ class CrpRingHistoryFetcher(
     companion object {
         /** A band that does not answer this many steps in a row is not answering at all. */
         const val MAX_CONSECUTIVE_TIMEOUTS = 3
+
+        /**
+         * Commands that some bands possibly do not know. If the first request of one of them gets
+         * no reply, the other requests of that command are dropped. Thus the timeouts do not add
+         * up and stop the fetch before sleep.
+         */
+        private val OPTIONAL_COMMANDS = setOf(CrpRingConstants.CMD_QUERY_TIMED_HRV, CrpRingConstants.CMD_QUERY_TIMED_STRESS)
     }
 
     private class Step(
@@ -69,7 +78,9 @@ class CrpRingHistoryFetcher(
     private val steps: MutableList<Step> = buildSteps()
     private val sessionDetails = HashMap<Int, CrpRingSleepDetails>()
     private var index = -1
-    private val pageZeroSize = HashMap<Pair<Int, Int>, Int>()
+    /** For each (command, day): the next page that is expected and its first slot. */
+    private val nextPage = HashMap<Pair<Int, Int>, Pair<Int, Int>>()
+    private val answeredCommands = HashSet<Int>()
     private var consecutiveTimeouts = 0
 
     /** True if the fetch stopped because the band did not answer [MAX_CONSECUTIVE_TIMEOUTS] steps in a row. */
@@ -88,6 +99,7 @@ class CrpRingHistoryFetcher(
         val step = current ?: return false
         if (!step.matches(message)) return false
         consecutiveTimeouts = 0
+        answeredCommands.add(step.command)
         consume(step, message.payload)
         advance()
         return true
@@ -101,6 +113,12 @@ class CrpRingHistoryFetcher(
             insertNext((days - 1 downTo 0).map { day ->
                 Step(CrpRingCommands.sleep(day), CrpRingConstants.CMD_QUERY_SLEEP, day, null)
             })
+        }
+        if (step.group == CrpRingConstants.GROUP_QUERY && step.command in OPTIONAL_COMMANDS && step.command !in answeredCommands) {
+            val later = steps.subList(index + 1, steps.size)
+            val dropped = later.count { it.group == step.group && it.command == step.command }
+            later.removeAll { it.group == step.group && it.command == step.command }
+            skippedSteps.add("group=${step.group} command=${step.command}: no reply, $dropped more requests dropped")
         }
         consecutiveTimeouts++
         if (consecutiveTimeouts >= MAX_CONSECUTIVE_TIMEOUTS) {
@@ -135,6 +153,13 @@ class CrpRingHistoryFetcher(
             for (page in 0..1) {
                 list.add(Step(CrpRingCommands.timedSpo2(day, page), CrpRingConstants.CMD_QUERY_TIMED_SPO2, day, page))
             }
+            // As in the vendor SDK: HRV has 4 pages of u16 values, stress has 2 pages of u8 values.
+            for (page in 0..3) {
+                list.add(Step(CrpRingCommands.timedHrv(day, page), CrpRingConstants.CMD_QUERY_TIMED_HRV, day, page))
+            }
+            for (page in 0..1) {
+                list.add(Step(CrpRingCommands.timedStress(day, page), CrpRingConstants.CMD_QUERY_TIMED_STRESS, day, page))
+            }
         }
         list.add(Step(CrpRingCommands.manualHeartRate(), CrpRingConstants.CMD_QUERY_MANUAL_HEART_RATE, null, null))
         list.add(Step(CrpRingCommands.manualSpo2(), CrpRingConstants.CMD_QUERY_MANUAL_SPO2, null, null))
@@ -160,6 +185,10 @@ class CrpRingHistoryFetcher(
                 consumePage(step.command, payload, CrpRingConstants.HEART_RATE_RANGE, result.heartRate)
             CrpRingConstants.CMD_QUERY_TIMED_SPO2 ->
                 consumePage(step.command, payload, CrpRingConstants.SPO2_RANGE, result.spo2)
+            CrpRingConstants.CMD_QUERY_TIMED_HRV ->
+                consumePage(step.command, payload, CrpRingConstants.HRV_RANGE, result.hrv, CrpRingParsers::page16)
+            CrpRingConstants.CMD_QUERY_TIMED_STRESS ->
+                consumePage(step.command, payload, CrpRingConstants.STRESS_RANGE, result.stress)
             CrpRingConstants.CMD_QUERY_MANUAL_HEART_RATE ->
                 consumeTimed(payload, CrpRingConstants.HEART_RATE_RANGE, result.heartRate)
             CrpRingConstants.CMD_QUERY_MANUAL_SPO2 ->
@@ -216,15 +245,27 @@ class CrpRingHistoryFetcher(
             .forEach { result.sleep.add(it) }
     }
 
-    private fun consumePage(command: Int, payload: ByteArray, valid: IntRange, target: MutableList<CrpRingValueSample>) {
-        val page = CrpRingParsers.page(payload) ?: return
+    /**
+     * A page continues the slots of the page before it. A page is skipped if the page before it
+     * did not come, because its first slot is then not known.
+     */
+    private fun consumePage(
+        command: Int,
+        payload: ByteArray,
+        valid: IntRange,
+        target: MutableList<CrpRingValueSample>,
+        parse: (ByteArray) -> CrpRingPage? = CrpRingParsers::page,
+    ) {
+        val page = parse(payload) ?: return
         val key = Pair(command, page.day)
         val offset = if (page.page == 0) {
-            pageZeroSize[key] = page.values.size
             0
         } else {
-            pageZeroSize[key] ?: return
+            val (expected, slot) = nextPage[key] ?: return
+            if (expected != page.page) return
+            slot
         }
+        nextPage[key] = Pair(page.page + 1, offset + page.values.size)
         val start = CrpRingTime.startOfDay(page.day, nowMillis, zone)
         page.values.forEachIndexed { i, value ->
             val timestamp = start + (offset + i) * CrpRingConstants.TIMED_INTERVAL_MINUTES * 60_000L

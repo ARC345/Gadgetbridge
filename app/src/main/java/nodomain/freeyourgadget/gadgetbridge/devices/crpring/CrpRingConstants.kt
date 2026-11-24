@@ -50,8 +50,10 @@ object CrpRingConstants {
     const val CMD_QUERY_MANUAL_SPO2 = 11
     const val CMD_QUERY_SLEEP = 14
     const val CMD_QUERY_TIMED_HEART_RATE = 15
+    const val CMD_QUERY_TIMED_HRV = 16
     const val CMD_QUERY_TIMED_SPO2 = 17
     const val CMD_QUERY_STEPS_DETAILS = 18
+    const val CMD_QUERY_TIMED_STRESS = 47
 
     // Group 3
     const val CMD_FIRMWARE_VERSION = 3
@@ -91,4 +93,7 @@ object CrpRingConstants {
 
     val HEART_RATE_RANGE = 40..200
     val SPO2_RANGE = 1..100
+    /** HRV in ms. 0 and 0xFFFF mean "no value". */
+    val HRV_RANGE = 1..300
+    val STRESS_RANGE = 1..100
 }

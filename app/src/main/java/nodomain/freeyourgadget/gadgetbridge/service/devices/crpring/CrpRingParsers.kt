@@ -45,10 +45,16 @@ object CrpRingParsers {
         return CrpRingDayValues(u8(payload, 0), (1 until payload.size step 2).map { u16(payload, it) })
     }
 
-    /** 2,15 and 2,17: [day, page, u8 * n], one value for each 5 minutes. */
+    /** 2,15, 2,17 and 2,47: [day, page, u8 * n], one value for each 5 minutes. */
     fun page(payload: ByteArray): CrpRingPage? {
         if (payload.size < 2) return null
         return CrpRingPage(u8(payload, 0), u8(payload, 1), (2 until payload.size).map { u8(payload, it) })
+    }
+
+    /** 2,16: [day, page, u16 * n], one value for each 5 minutes. */
+    fun page16(payload: ByteArray): CrpRingPage? {
+        if (payload.size < 2 || payload.size % 2 != 0) return null
+        return CrpRingPage(u8(payload, 0), u8(payload, 1), (2 until payload.size step 2).map { u16(payload, it) })
     }
 
     /** 2,9 and 2,11: [x, (value u8, device timestamp u32) * n]. */
