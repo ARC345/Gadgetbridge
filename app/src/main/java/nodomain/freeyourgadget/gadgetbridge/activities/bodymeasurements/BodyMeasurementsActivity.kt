@@ -24,6 +24,7 @@ import android.view.LayoutInflater
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
+import android.widget.Toast
 import androidx.activity.viewModels
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
@@ -31,17 +32,14 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import nodomain.freeyourgadget.gadgetbridge.GBApplication
 import nodomain.freeyourgadget.gadgetbridge.R
 import nodomain.freeyourgadget.gadgetbridge.activities.AbstractGBActivity
 import nodomain.freeyourgadget.gadgetbridge.activities.charts.spec.ChartSeries
 import nodomain.freeyourgadget.gadgetbridge.database.repository.BodyMeasurement
-import nodomain.freeyourgadget.gadgetbridge.database.repository.BodyMeasurementRepository
 import nodomain.freeyourgadget.gadgetbridge.databinding.ActivityBodyMeasurementsBinding
 import nodomain.freeyourgadget.gadgetbridge.model.BodyMeasurementType
+import nodomain.freeyourgadget.gadgetbridge.util.GB
 
 class BodyMeasurementsActivity : AbstractGBActivity() {
     private val viewModel: BodyMeasurementsViewModel by viewModels()
@@ -64,6 +62,11 @@ class BodyMeasurementsActivity : AbstractGBActivity() {
 
         lifecycleScope.launch {
             viewModel.state.collect { state -> state?.let(::render) }
+        }
+        lifecycleScope.launch {
+            viewModel.errors.collect {
+                GB.toast(this@BodyMeasurementsActivity, R.string.body_measurements_error_database, Toast.LENGTH_SHORT, GB.ERROR)
+            }
         }
     }
 
@@ -162,12 +165,7 @@ class BodyMeasurementsActivity : AbstractGBActivity() {
             .setTitle(R.string.body_measurements_delete_title)
             .setMessage(DateUtils.formatDateTime(this, entry.timestamp, DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_SHOW_TIME))
             .setPositiveButton(R.string.delete) { _, _ ->
-                lifecycleScope.launch {
-                    withContext(Dispatchers.IO) {
-                        GBApplication.acquireDB().use { db -> BodyMeasurementRepository(db.daoSession).delete(entry.id) }
-                    }
-                    viewModel.refresh()
-                }
+                viewModel.delete(entry.id)
             }
             .setNegativeButton(R.string.cancel, null)
             .show()

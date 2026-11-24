@@ -83,6 +83,10 @@ object BodyMeasurementCalculator {
             )
             DerivedMetric.WAIST_TO_HIP -> BodyCompositionEstimates.waistToHip(values[BodyMeasurementType.WAIST_NAVEL], values[BodyMeasurementType.HIPS])
             DerivedMetric.WAIST_TO_HEIGHT -> BodyCompositionEstimates.waistToHeight(values[BodyMeasurementType.WAIST_NAVEL], height)
+            DerivedMetric.RELATIVE_FAT_MASS -> BodyCompositionEstimates.relativeFatMass(male, height, values[BodyMeasurementType.WAIST_NAVEL])
+            DerivedMetric.BODY_ROUNDNESS -> BodyCompositionEstimates.bodyRoundnessIndex(values[BodyMeasurementType.WAIST_NAVEL], height)
+            DerivedMetric.WEIGHT_ADJUSTED_WAIST -> BodyCompositionEstimates.weightAdjustedWaist(values[BodyMeasurementType.WAIST_NAVEL], values[BodyMeasurementType.WEIGHT])
+            DerivedMetric.CONICITY -> BodyCompositionEstimates.conicityIndex(values[BodyMeasurementType.WAIST_NAVEL], values[BodyMeasurementType.WEIGHT], height)
             DerivedMetric.BMI -> error("handled above")
         }
         if (raw == null || (metric.needsSex && !BodyCompositionEstimates.isPlausibleBodyFat(raw))) {

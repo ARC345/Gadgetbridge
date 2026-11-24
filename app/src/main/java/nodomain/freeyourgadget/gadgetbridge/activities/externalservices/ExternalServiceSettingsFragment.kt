@@ -69,8 +69,8 @@ class ExternalServiceSettingsFragment : AbstractPreferenceFragment() {
                 setDefaultValue(false)
                 layoutResource = R.layout.preference_checkbox
                 setIcon(R.drawable.ic_file_upload)
-                title = getString(R.string.pref_service_auto_upload_title, name)
-                summary = getString(R.string.pref_service_auto_upload_summary, name)
+                title = getString(service.autoUploadTitleRes, name)
+                summary = getString(service.autoUploadSummaryRes, name)
             }
         )
 

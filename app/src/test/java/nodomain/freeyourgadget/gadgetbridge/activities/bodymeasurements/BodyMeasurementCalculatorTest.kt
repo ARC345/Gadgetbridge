@@ -11,8 +11,10 @@ import nodomain.freeyourgadget.gadgetbridge.model.BodyMeasurementType.THIGH_SKIN
 import nodomain.freeyourgadget.gadgetbridge.model.BodyMeasurementType.WAIST_NARROWEST
 import nodomain.freeyourgadget.gadgetbridge.model.BodyMeasurementType.WAIST_NAVEL
 import nodomain.freeyourgadget.gadgetbridge.model.BodyMeasurementType.WEIGHT
+import nodomain.freeyourgadget.gadgetbridge.util.BodyCompositionEstimates
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.Locale
@@ -86,12 +88,59 @@ class BodyMeasurementCalculatorTest {
     }
 
     @Test
+    fun `relative fat mass uses the constant of the sex`() {
+        val values = mapOf(WAIST_NAVEL to 90.0)
+        assertEquals(24.0, value(BodyMeasurementCalculator.calculate(DerivedMetric.RELATIVE_FAT_MASS, values, man, null)), 1e-9)
+        assertEquals(
+            32.0,
+            value(BodyMeasurementCalculator.calculate(DerivedMetric.RELATIVE_FAT_MASS, mapOf(WAIST_NAVEL to 75.0), woman, null)),
+            1e-9,
+        )
+        assertEquals(DerivedResult.NeedsSex, BodyMeasurementCalculator.calculate(DerivedMetric.RELATIVE_FAT_MASS, values, other, null))
+        // A waist of less than a third of the height gives a negative body fat, which is not plotted.
+        assertEquals(DerivedResult.OutOfRange, BodyMeasurementCalculator.calculate(DerivedMetric.RELATIVE_FAT_MASS, mapOf(WAIST_NAVEL to 40.0), man, null))
+    }
+
+    @Test
+    fun `waist indices use the waist at the navel and the typed weight`() {
+        val values = mapOf(WAIST_NAVEL to 90.0, WEIGHT to 80.0)
+        assertEquals(3.3588, value(BodyMeasurementCalculator.calculate(DerivedMetric.BODY_ROUNDNESS, values, man, null)), 1e-4)
+        assertEquals(10.0623, value(BodyMeasurementCalculator.calculate(DerivedMetric.WEIGHT_ADJUSTED_WAIST, values, man, null)), 1e-4)
+        assertEquals(1.2385, value(BodyMeasurementCalculator.calculate(DerivedMetric.CONICITY, values, man, null)), 1e-4)
+        // The scale weight does not replace the typed weight for these indices.
+        assertEquals(
+            DerivedResult.Missing(WEIGHT),
+            BodyMeasurementCalculator.calculate(DerivedMetric.CONICITY, mapOf(WAIST_NAVEL to 90.0), man, 80.0),
+        )
+        assertEquals(
+            DerivedResult.Missing(WEIGHT),
+            BodyMeasurementCalculator.calculate(DerivedMetric.WEIGHT_ADJUSTED_WAIST, mapOf(WAIST_NAVEL to 90.0), man, 80.0),
+        )
+    }
+
+    @Test
+    fun `body roundness is out of range for a waist larger than pi times the height`() {
+        assertEquals(DerivedResult.Missing(WAIST_NAVEL), BodyMeasurementCalculator.calculate(DerivedMetric.BODY_ROUNDNESS, emptyMap(), man, null))
+        assertNull(BodyCompositionEstimates.bodyRoundnessIndex(600.0, 180.0))
+    }
+
+    @Test
     fun `visibility follows the enabled inputs and the sex`() {
         val defaults = BodyMeasurementType.defaultEnabled()
         assertFalse(DerivedMetric.SKINFOLD_BODY_FAT.showsInBox(ActivityUser.GENDER_MALE, defaults))
         assertTrue(DerivedMetric.NAVY_BODY_FAT.showsInChart(ActivityUser.GENDER_MALE, defaults))
-        // The women's Navy formula needs the narrowest waist, which is off by default.
-        assertFalse(DerivedMetric.NAVY_BODY_FAT.showsInBox(ActivityUser.GENDER_FEMALE, defaults))
+        // The women's Navy formula needs the narrowest waist, which is off by default. The box still
+        // shows the line through the men's inputs, so that a wrong sex is noticed.
+        assertTrue(DerivedMetric.NAVY_BODY_FAT.showsInBox(ActivityUser.GENDER_FEMALE, defaults))
+        assertFalse(DerivedMetric.NAVY_BODY_FAT.showsInChart(ActivityUser.GENDER_FEMALE, defaults))
+        // Both skinfold formulas need skinfolds, which are off by default.
+        assertFalse(DerivedMetric.SKINFOLD_BODY_FAT.showsInBox(ActivityUser.GENDER_FEMALE, defaults))
+        assertFalse(DerivedMetric.SKINFOLD_BODY_FAT.showsInChart(ActivityUser.GENDER_MALE, defaults))
+        // Only the inputs of the other sex are enabled.
+        val skinfoldsOfMen = setOf(BodyMeasurementType.CHEST_SKINFOLD, BodyMeasurementType.ABDOMEN_SKINFOLD, BodyMeasurementType.THIGH_SKINFOLD)
+        assertTrue(DerivedMetric.SKINFOLD_BODY_FAT.showsInBox(ActivityUser.GENDER_FEMALE, skinfoldsOfMen))
+        assertFalse(DerivedMetric.SKINFOLD_BODY_FAT.showsInChart(ActivityUser.GENDER_FEMALE, skinfoldsOfMen))
+        assertTrue(DerivedMetric.SKINFOLD_BODY_FAT.showsInChart(ActivityUser.GENDER_MALE, skinfoldsOfMen))
         assertTrue(DerivedMetric.NAVY_BODY_FAT.showsInBox(ActivityUser.GENDER_OTHER, defaults))
         assertFalse(DerivedMetric.NAVY_BODY_FAT.showsInChart(ActivityUser.GENDER_OTHER, defaults))
     }

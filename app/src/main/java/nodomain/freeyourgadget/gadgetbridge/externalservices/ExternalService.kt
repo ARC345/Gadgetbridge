@@ -71,6 +71,16 @@ interface ExternalService {
     val autoUploadPrefKey: String
         get() = "${id}_auto_upload_enabled"
 
+    /** Title of the row that turns automatic sending on. Takes the service name. */
+    @get:StringRes
+    val autoUploadTitleRes: Int
+        get() = R.string.pref_service_auto_upload_title
+
+    /** Summary of the row that turns automatic sending on. Takes the service name. */
+    @get:StringRes
+    val autoUploadSummaryRes: Int
+        get() = R.string.pref_service_auto_upload_summary
+
     /** Address of the user's instance, or null when they have not given one. */
     fun serverUrl(): String? =
         serverPrefKey?.let { GBApplication.getPrefs().preferences.getString(it, null) }

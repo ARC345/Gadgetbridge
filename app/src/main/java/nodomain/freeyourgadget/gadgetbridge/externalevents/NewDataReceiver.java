@@ -39,6 +39,7 @@ import java.util.concurrent.TimeUnit;
 
 import nodomain.freeyourgadget.gadgetbridge.GBApplication;
 import nodomain.freeyourgadget.gadgetbridge.activities.workouts.WorkoutUploadWorker;
+import nodomain.freeyourgadget.gadgetbridge.externalservices.liftosaur.LiftosaurWeightSyncWorker;
 import nodomain.freeyourgadget.gadgetbridge.impl.GBDevice;
 import nodomain.freeyourgadget.gadgetbridge.util.GBPrefs;
 import nodomain.freeyourgadget.gadgetbridge.util.healthconnect.HealthConnectSyncWorker;
@@ -81,6 +82,9 @@ public class NewDataReceiver extends BroadcastReceiver {
     public void onReceive(Context context, Intent intent) {
         GBPrefs prefs = GBApplication.getPrefs();
         maybeScheduleAutoUpload(context, intent, prefs);
+        if (ACTION_NEW_DATA.equals(intent.getAction())) {
+            maybeScheduleLiftosaurSync(context, intent);
+        }
         if (ACTION_NEW_DATA.equals(intent.getAction()) &&
                 prefs.getBoolean(GBPrefs.HEALTH_CONNECT_ENABLED, false) &&
                 prefs.getBoolean(GBPrefs.HEALTH_CONNECT_SYNC_ON_EVENT, false)) {
@@ -123,6 +127,19 @@ public class NewDataReceiver extends BroadcastReceiver {
                 syncRequest
             );
         }
+    }
+
+    /**
+     * Enqueues a {@link LiftosaurWeightSyncWorker} for the device that sent new data. The worker
+     * checks that Liftosaur auto-sync is on and that the account is logged in.
+     */
+    private void maybeScheduleLiftosaurSync(Context context, Intent intent) {
+        final GBDevice device = intent.getParcelableExtra(GBDevice.EXTRA_DEVICE);
+        final String deviceAddress = device != null ? device.getAddress() : null;
+        if (deviceAddress == null || deviceAddress.isBlank()) {
+            return;
+        }
+        LiftosaurWeightSyncWorker.enqueueIfEnabled(context, deviceAddress);
     }
 
     /**

@@ -17,13 +17,18 @@
 
 package nodomain.freeyourgadget.gadgetbridge.activities.bodymeasurements
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import nodomain.freeyourgadget.gadgetbridge.GBApplication
@@ -33,8 +38,10 @@ import nodomain.freeyourgadget.gadgetbridge.database.repository.BodyMeasurementR
 import nodomain.freeyourgadget.gadgetbridge.model.ActivityUser
 import nodomain.freeyourgadget.gadgetbridge.model.BodyMeasurementType
 import nodomain.freeyourgadget.gadgetbridge.model.BodyMeasurementUnits
+import org.slf4j.LoggerFactory
 
-class BodyMeasurementsViewModel : ViewModel() {
+/** The chosen series and period are kept in [SavedStateHandle], so they survive process death. */
+class BodyMeasurementsViewModel(private val savedState: SavedStateHandle) : ViewModel() {
     /** [scale] has points only for the weight series. */
     data class ChartData(val main: List<ChartPoint>, val scale: List<ChartPoint>, val fromSec: Double, val toSec: Double)
 
@@ -51,8 +58,14 @@ class BodyMeasurementsViewModel : ViewModel() {
     private val _state = MutableStateFlow<ScreenState?>(null)
     val state: StateFlow<ScreenState?> = _state.asStateFlow()
 
-    private var selected: BodySeries? = null
-    private var period = ChartPeriod.THREE_MONTHS
+    private val _errors = Channel<Unit>(Channel.BUFFERED)
+
+    /** One event for each database failure that the activity shows to the user. */
+    val errors: Flow<Unit> = _errors.receiveAsFlow()
+
+    private var selected: BodySeries? = savedState.get<String>(KEY_SERIES)?.let(::seriesOf)
+    private var period = savedState.get<String>(KEY_PERIOD)?.let { name -> ChartPeriod.entries.firstOrNull { it.name == name } }
+        ?: ChartPeriod.THREE_MONTHS
     private var loadJob: Job? = null
 
     fun select(series: BodySeries) {
@@ -60,6 +73,7 @@ class BodyMeasurementsViewModel : ViewModel() {
             return
         }
         selected = series
+        savedState[KEY_SERIES] = keyOf(series)
         refresh()
     }
 
@@ -68,7 +82,25 @@ class BodyMeasurementsViewModel : ViewModel() {
             return
         }
         period = value
+        savedState[KEY_PERIOD] = value.name
         refresh()
+    }
+
+    /** Deletes the entry in [viewModelScope], so a recreation of the activity does not skip the refresh. */
+    fun delete(entryId: Long) {
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    GBApplication.acquireDB().use { db -> BodyMeasurementRepository(db.daoSession).delete(entryId) }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                LOG.error("Could not delete the body measurement entry", e)
+                _errors.trySend(Unit)
+            }
+            refresh()
+        }
     }
 
     fun refresh() {
@@ -80,8 +112,17 @@ class BodyMeasurementsViewModel : ViewModel() {
         val currentPeriod = period
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
-            val loaded = withContext(Dispatchers.IO) { load(nowMillis, units, enabled, gender, wanted, currentPeriod) }
+            val loaded = try {
+                withContext(Dispatchers.IO) { load(nowMillis, units, enabled, gender, wanted, currentPeriod) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                LOG.error("Could not load the body measurements", e)
+                _errors.trySend(Unit)
+                return@launch
+            }
             selected = loaded.selected
+            savedState[KEY_SERIES] = keyOf(loaded.selected)
             _state.value = loaded
         }
     }
@@ -129,5 +170,22 @@ class BodyMeasurementsViewModel : ViewModel() {
         val nowSec = nowMillis / 1000.0
         val fromSec = if (currentPeriod.days == null) (main + scale).minOfOrNull { it.x } ?: nowSec else fromMillis / 1000.0
         ScreenState(all, options, current, currentPeriod, ChartData(main, scale, fromSec, nowSec), units, enabled)
+    }
+
+    private companion object {
+        private val LOG = LoggerFactory.getLogger(BodyMeasurementsViewModel::class.java)
+        const val KEY_SERIES = "body_measurements_series"
+        const val KEY_PERIOD = "body_measurements_period"
+
+        fun keyOf(series: BodySeries): String = when (series) {
+            is BodySeries.Measured -> "type:${series.type.code}"
+            is BodySeries.Derived -> "derived:${series.metric.name}"
+        }
+
+        fun seriesOf(key: String): BodySeries? = when {
+            key.startsWith("type:") -> key.removePrefix("type:").toIntOrNull()?.let(BodyMeasurementType::fromCode)?.let { BodySeries.Measured(it) }
+            key.startsWith("derived:") -> DerivedMetric.entries.firstOrNull { it.name == key.removePrefix("derived:") }?.let { BodySeries.Derived(it) }
+            else -> null
+        }
     }
 }

@@ -22,6 +22,13 @@ class BodyMeasurementFormTest {
     private val hips = BodyMeasurementType.HIPS
 
     @Test
+    fun `parses the digits and the decimal sign of other scripts`() {
+        assertEquals(32.25, BodyMeasurementForm.parse("\u0663\u0662\u066B\u0662\u0665")!!, 0.0)
+        assertEquals(32.25, BodyMeasurementForm.parse("\u06F3\u06F2.\u06F2\u06F5")!!, 0.0)
+        assertEquals(32.25, BodyMeasurementForm.parse("32\u066B25")!!, 0.0)
+    }
+
+    @Test
     fun `parses a comma or a full stop`() {
         assertEquals(32.25, BodyMeasurementForm.parse(" 32,25 ")!!, 0.0)
         assertEquals(32.25, BodyMeasurementForm.parse("32.25")!!, 0.0)

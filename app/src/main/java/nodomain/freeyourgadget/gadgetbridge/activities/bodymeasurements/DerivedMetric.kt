@@ -33,10 +33,14 @@ enum class DerivedMetric(@StringRes val labelRes: Int) {
     SKINFOLD_BODY_FAT(R.string.body_measurements_derived_skinfold),
     WAIST_TO_HIP(R.string.body_measurements_derived_waist_to_hip),
     WAIST_TO_HEIGHT(R.string.body_measurements_derived_waist_to_height),
+    RELATIVE_FAT_MASS(R.string.body_measurements_derived_relative_fat_mass),
+    BODY_ROUNDNESS(R.string.body_measurements_derived_body_roundness),
+    WEIGHT_ADJUSTED_WAIST(R.string.body_measurements_derived_weight_adjusted_waist),
+    CONICITY(R.string.body_measurements_derived_conicity),
     ;
 
-    /** The body fat formulas exist only for men and women. */
-    val needsSex: Boolean get() = this == NAVY_BODY_FAT || this == SKINFOLD_BODY_FAT
+    /** The body fat formulas of the sex, Navy, skinfold and relative fat mass, exist only for men and women. */
+    val needsSex: Boolean get() = this == NAVY_BODY_FAT || this == SKINFOLD_BODY_FAT || this == RELATIVE_FAT_MASS
 
     /** The measured types that the formula needs, in the order that "Needs" names them. */
     fun inputs(gender: Int): List<BodyMeasurementType> = when (this) {
@@ -53,18 +57,32 @@ enum class DerivedMetric(@StringRes val labelRes: Int) {
         }
         WAIST_TO_HIP -> listOf(BodyMeasurementType.WAIST_NAVEL, BodyMeasurementType.HIPS)
         WAIST_TO_HEIGHT -> listOf(BodyMeasurementType.WAIST_NAVEL)
+        RELATIVE_FAT_MASS -> listOf(BodyMeasurementType.WAIST_NAVEL)
+        BODY_ROUNDNESS -> listOf(BodyMeasurementType.WAIST_NAVEL)
+        WEIGHT_ADJUSTED_WAIST -> listOf(BodyMeasurementType.WAIST_NAVEL, BodyMeasurementType.WEIGHT)
+        CONICITY -> listOf(BodyMeasurementType.WAIST_NAVEL, BodyMeasurementType.WEIGHT)
     }
 
-    /** The editor box shows the metric when all of its inputs are enabled. */
-    fun showsInBox(gender: Int, enabled: Set<BodyMeasurementType>): Boolean = enabled.containsAll(inputs(gender))
+    private fun hasSex(gender: Int): Boolean = gender == ActivityUser.GENDER_MALE || gender == ActivityUser.GENDER_FEMALE
 
-    /** The chart also needs a result, so the body fat formulas also need male or female. */
+    /**
+     * The editor box shows the metric when all of its inputs are enabled. A body fat formula also
+     * shows when the inputs of only the other sex are enabled, so that a wrong sex in "About you"
+     * is noticed from the formula that the line names.
+     */
+    fun showsInBox(gender: Int, enabled: Set<BodyMeasurementType>): Boolean = when {
+        !needsSex || !hasSex(gender) -> enabled.containsAll(inputs(gender))
+        else -> enabled.containsAll(inputs(ActivityUser.GENDER_MALE)) || enabled.containsAll(inputs(ActivityUser.GENDER_FEMALE))
+    }
+
+    /** The chart needs a result, so the inputs of the sex of the user and, for body fat, male or female. */
     fun showsInChart(gender: Int, enabled: Set<BodyMeasurementType>): Boolean =
-        showsInBox(gender, enabled) && (!needsSex || gender == ActivityUser.GENDER_MALE || gender == ActivityUser.GENDER_FEMALE)
+        enabled.containsAll(inputs(gender)) && (!needsSex || hasSex(gender))
 
     fun format(value: Double, locale: Locale = Locale.getDefault()): String = when (this) {
         BMI -> String.format(locale, "%.1f", value)
         NAVY_BODY_FAT, SKINFOLD_BODY_FAT -> String.format(locale, "%.1f %%", value)
-        WAIST_TO_HIP, WAIST_TO_HEIGHT -> String.format(locale, "%.2f", value)
+        RELATIVE_FAT_MASS -> String.format(locale, "%.1f %%", value)
+        WAIST_TO_HIP, WAIST_TO_HEIGHT, BODY_ROUNDNESS, WEIGHT_ADJUSTED_WAIST, CONICITY -> String.format(locale, "%.2f", value)
     }
 }

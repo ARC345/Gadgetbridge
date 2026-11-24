@@ -1,0 +1,45 @@
+/*  Copyright (C) 2026 Gadgetbridge contributors
+
+    This file is part of Gadgetbridge.
+
+    Gadgetbridge is free software: you can redistribute it and/or modify
+    it under the terms of the GNU Affero General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Gadgetbridge is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU Affero General Public License for more details.
+
+    You should have received a copy of the GNU Affero General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>. */
+package nodomain.freeyourgadget.gadgetbridge.externalservices.liftosaur
+
+import nodomain.freeyourgadget.gadgetbridge.R
+import nodomain.freeyourgadget.gadgetbridge.externalservices.AbstractApiTokenSetupBottomSheet
+
+/** Asks for the Liftosaur API key, checks it, and stores it. */
+class LiftosaurSetupBottomSheet : AbstractApiTokenSetupBottomSheet(
+    R.layout.liftosaur_bottomsheet_setup_wizard,
+    R.id.liftosaur_api_token
+) {
+    override val service = LiftosaurService
+
+    override fun validate(apiToken: String): String? = when {
+        apiToken.isEmpty() ->
+            getString(R.string.service_setup_missing_information)
+
+        !apiToken.startsWith(LiftosaurTokenManager.TOKEN_PREFIX) ->
+            getString(R.string.service_setup_api_token_prefix_error, LiftosaurTokenManager.TOKEN_PREFIX)
+
+        else -> null
+    }
+
+    override fun checkToken(apiToken: String): Pair<Boolean, String?> =
+        LiftosaurApiClient.checkApiKey(apiToken)
+
+    override fun onTokenAccepted(apiToken: String) {
+        LiftosaurTokenManager(requireContext()).saveToken(apiToken)
+    }
+}

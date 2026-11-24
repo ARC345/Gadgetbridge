@@ -42,6 +42,7 @@ import nodomain.freeyourgadget.gadgetbridge.R
 import nodomain.freeyourgadget.gadgetbridge.activities.AbstractGBActivity
 import nodomain.freeyourgadget.gadgetbridge.databinding.ActivityBodyMeasurementEditBinding
 import nodomain.freeyourgadget.gadgetbridge.databinding.ItemBodyMeasurementFieldBinding
+import nodomain.freeyourgadget.gadgetbridge.model.ActivityUser
 import nodomain.freeyourgadget.gadgetbridge.model.BodyMeasurementType
 import nodomain.freeyourgadget.gadgetbridge.util.DateTimeUtils
 import nodomain.freeyourgadget.gadgetbridge.util.GB
@@ -84,8 +85,15 @@ class BodyMeasurementEditActivity : AbstractGBActivity() {
             }
         }
         lifecycleScope.launch {
+            viewModel.errors.collect { showDatabaseError() }
+        }
+        lifecycleScope.launch {
             viewModel.ui.collect { ui -> ui?.let(::render) }
         }
+    }
+
+    private fun showDatabaseError() {
+        GB.toast(this, R.string.body_measurements_error_database, Toast.LENGTH_SHORT, GB.ERROR)
     }
 
     /** The base activity pads for the system bars only; the editor must also stay above the keyboard. */
@@ -119,18 +127,32 @@ class BodyMeasurementEditActivity : AbstractGBActivity() {
             }
         }
         binding.bodyMeasurementCalculated.text = ui.calculated.joinToString("\n") { (metric, result) ->
-            getString(R.string.body_measurements_derived_line, getString(metric.labelRes), describe(metric, result))
+            getString(R.string.body_measurements_derived_line, getString(metric.labelRes), describe(metric, result, ui.gender))
         }
     }
 
-    private fun describe(metric: DerivedMetric, result: DerivedResult): String = when (result) {
-        is DerivedResult.Value -> {
-            val text = metric.format(result.value)
-            result.sourceRes?.let { getString(R.string.body_measurements_value_with_source, text, getString(it)) } ?: text
+    private fun describe(metric: DerivedMetric, result: DerivedResult, gender: Int): String {
+        // A body fat line names its formula sex also without a value, so a wrong sex is noticed.
+        val formula = if (metric.needsSex && result !is DerivedResult.Value && result != DerivedResult.NeedsSex) {
+            getString(if (gender == ActivityUser.GENDER_MALE) R.string.body_measurements_formula_male else R.string.body_measurements_formula_female)
+        } else {
+            null
         }
-        is DerivedResult.Missing -> getString(R.string.body_measurements_needs, getString(result.type.labelRes))
-        DerivedResult.NeedsSex -> getString(R.string.body_measurements_needs_sex)
-        DerivedResult.OutOfRange -> getString(R.string.body_measurements_out_of_range)
+        return when (result) {
+            is DerivedResult.Value -> {
+                val text = metric.format(result.value)
+                result.sourceRes?.let { getString(R.string.body_measurements_value_with_source, text, getString(it)) } ?: text
+            }
+            is DerivedResult.Missing -> if (formula != null) {
+                getString(R.string.body_measurements_needs_formula, getString(result.type.labelRes), formula)
+            } else {
+                getString(R.string.body_measurements_needs, getString(result.type.labelRes))
+            }
+            DerivedResult.NeedsSex -> getString(R.string.body_measurements_needs_sex)
+            DerivedResult.OutOfRange -> getString(R.string.body_measurements_out_of_range).let {
+                if (formula != null) getString(R.string.body_measurements_value_with_source, it, formula) else it
+            }
+        }
     }
 
     private fun buildFields(fields: List<FieldState>) {
@@ -179,6 +201,9 @@ class BodyMeasurementEditActivity : AbstractGBActivity() {
     }
 
     private fun pickDate() {
+        if (viewModel.ui.value == null) {
+            return
+        }
         val picker = MaterialDatePicker.Builder.datePicker()
             .setSelection(DateTimeUtils.toUtcDayStartMillis(viewModel.currentTimestamp()))
             .build()
@@ -190,12 +215,20 @@ class BodyMeasurementEditActivity : AbstractGBActivity() {
         picker.addOnPositiveButtonClickListener { selection ->
             // The picker uses UTC midnight; keep the local time of the entry.
             val zone = ZoneId.systemDefault()
-            val time = Instant.ofEpochMilli(viewModel.currentTimestamp()).atZone(zone).toLocalTime()
-            viewModel.changeTimestamp(BodyMeasurementForm.timestampOf(DateTimeUtils.utcMillisToLocalDate(selection), time, zone))
+            val current = Instant.ofEpochMilli(viewModel.currentTimestamp()).atZone(zone)
+            val date = DateTimeUtils.utcMillisToLocalDate(selection)
+            if (date == current.toLocalDate()) {
+                // Inside a daylight saving overlap, the same date would move the entry by an hour.
+                return@addOnPositiveButtonClickListener
+            }
+            viewModel.changeTimestamp(BodyMeasurementForm.timestampOf(date, current.toLocalTime(), zone))
         }
     }
 
     private fun pickTime() {
+        if (viewModel.ui.value == null) {
+            return
+        }
         val current = Instant.ofEpochMilli(viewModel.currentTimestamp()).atZone(ZoneId.systemDefault())
         val picker = MaterialTimePicker.Builder()
             .setTimeFormat(if (DateFormat.is24HourFormat(this)) TimeFormat.CLOCK_24H else TimeFormat.CLOCK_12H)
@@ -229,6 +262,10 @@ class BodyMeasurementEditActivity : AbstractGBActivity() {
                 is BodyMeasurementForm.Validation.Ok -> Unit // the saved flow finishes the activity
                 is BodyMeasurementForm.Validation.FieldErrors -> {
                     result.errors.forEach { (code, messageRes) -> fieldViews[code]?.error = getString(messageRes) }
+                    saving = false
+                }
+                BodyMeasurementForm.Validation.Failed -> {
+                    showDatabaseError()
                     saving = false
                 }
                 BodyMeasurementForm.Validation.Empty -> {

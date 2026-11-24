@@ -6302,6 +6302,10 @@
     <string name="pref_service_log_out_title">Log out of %1$s</string>
     <string name="pref_service_auto_upload_title">Auto-upload to %1$s</string>
     <string name="pref_service_auto_upload_summary">Automatically upload newly synced workouts to %1$s</string>
+    <string name="service_name_liftosaur" translatable="false">Liftosaur</string>
+    <string name="pref_liftosaur_auto_upload_title">Auto-sync body measurements to %1$s</string>
+    <string name="pref_liftosaur_auto_upload_summary">Send scale weigh-ins, body fat and saved body measurements to %1$s</string>
+    <string name="liftosaur_sync_failed_notification_title">Liftosaur sync failed</string>
     <string name="pref_service_log_out_summary">Tap here to log out, this disables the integration</string>
     <string name="pref_info_endurain_status_title">Endurain status</string>
     <string name="pref_endurain_log_in_title">Log in to Endurain</string>
@@ -6805,11 +6809,16 @@
     <string name="body_measurements_derived_skinfold">Body fat (3-site skinfold)</string>
     <string name="body_measurements_derived_waist_to_hip">Waist-to-hip (at navel)</string>
     <string name="body_measurements_derived_waist_to_height">Waist-to-height (at navel)</string>
+    <string name="body_measurements_derived_relative_fat_mass">Relative fat mass (at navel)</string>
+    <string name="body_measurements_derived_body_roundness">Body roundness index (at navel)</string>
+    <string name="body_measurements_derived_weight_adjusted_waist">Weight-adjusted waist (at navel)</string>
+    <string name="body_measurements_derived_conicity">Conicity index (at navel)</string>
     <string name="body_measurements_weight_typed">typed weight</string>
     <string name="body_measurements_weight_scale">scale weight</string>
     <string name="body_measurements_formula_male">male formula</string>
     <string name="body_measurements_formula_female">female formula</string>
     <string name="body_measurements_needs">Needs %1$s</string>
+    <string name="body_measurements_needs_formula">Needs %1$s (%2$s)</string>
     <string name="body_measurements_needs_sex">Needs male or female in About you</string>
     <string name="body_measurements_out_of_range">Out of range</string>
     <string name="body_measurements_value_with_source">%1$s (%2$s)</string>
@@ -6822,7 +6831,8 @@
     <string name="body_measurements_unit_inches">Inches</string>
     <string name="body_measurements_error_number">Type a number</string>
     <string name="body_measurements_error_positive">Must be more than 0</string>
-    <string name="body_measurements_error_body_fat">Must be from 0 to 100</string>
+    <string name="body_measurements_error_body_fat">Must be more than 0 and not more than 100</string>
+    <string name="body_measurements_error_database">Could not access the database</string>
     <string name="body_measurements_error_empty">Type at least one value or a note</string>
     <string name="body_measurements_new_title">New measurement</string>
     <string name="body_measurements_edit_title">Edit measurement</string>

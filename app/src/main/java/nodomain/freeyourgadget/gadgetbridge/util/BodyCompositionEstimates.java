@@ -168,6 +168,71 @@ public final class BodyCompositionEstimates {
         return waistCm / heightCm;
     }
 
+    /**
+     * Body fat % by relative fat mass (Woolcott and Bergman, 2018), from the height and the waist
+     * circumference, both in centimetres. The constant is 64 for men and 76 for women.
+     *
+     * @return the body fat %, or null if an input is not more than 0
+     */
+    @Nullable
+    public static Double relativeFatMass(final boolean male, final double heightCm, @Nullable final Double waistCm) {
+        if (heightCm <= 0 || !isPositive(waistCm)) {
+            return null;
+        }
+        return (male ? 64d : 76d) - 20d * heightCm / waistCm;
+    }
+
+    /**
+     * Body Roundness Index (Thomas et al., 2013), from the waist circumference and the height, both
+     * in centimetres. The index models the body as an ellipse; a waist larger than pi times the
+     * height has no ellipse, so it returns null.
+     *
+     * @return the index, or null if an input is not more than 0 or the waist is too large
+     */
+    @Nullable
+    public static Double bodyRoundnessIndex(@Nullable final Double waistCm, final double heightCm) {
+        if (!isPositive(waistCm) || heightCm <= 0) {
+            return null;
+        }
+        final double ratio = waistCm / (Math.PI * heightCm);
+        final double inside = 1 - ratio * ratio;
+        if (inside < 0) {
+            return null;
+        }
+        return 364.2 - 365.5 * Math.sqrt(inside);
+    }
+
+    /**
+     * Weight-Adjusted Waist Index (Park et al., 2018): the waist circumference in centimetres
+     * divided by the square root of the weight in kilograms.
+     *
+     * @return the index in cm/√kg, or null if an input is not more than 0
+     */
+    @Nullable
+    public static Double weightAdjustedWaist(@Nullable final Double waistCm, @Nullable final Double weightKg) {
+        if (!isPositive(waistCm) || !isPositive(weightKg)) {
+            return null;
+        }
+        return waistCm / Math.sqrt(weightKg);
+    }
+
+    /**
+     * Conicity Index (Valdez et al., 1991, 1993): the waist circumference in metres, divided by
+     * 0.109 times the square root of the weight in kilograms over the height in metres. A cylinder
+     * gives 1.00 and a double cone gives about 1.73.
+     *
+     * @return the index, or null if an input is not more than 0
+     */
+    @Nullable
+    public static Double conicityIndex(@Nullable final Double waistCm, @Nullable final Double weightKg, final double heightCm) {
+        if (!isPositive(waistCm) || !isPositive(weightKg) || heightCm <= 0) {
+            return null;
+        }
+        final double waistM = waistCm / 100d;
+        final double heightM = heightCm / 100d;
+        return waistM / (0.109 * Math.sqrt(weightKg / heightM));
+    }
+
     /** A calculated body fat % can be impossible for valid inputs, for example a negative value. */
     public static boolean isPlausibleBodyFat(final double percent) {
         return percent > 0 && percent < 100;

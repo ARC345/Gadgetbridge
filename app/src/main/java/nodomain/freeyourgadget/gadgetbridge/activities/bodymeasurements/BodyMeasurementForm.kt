@@ -64,6 +64,9 @@ object BodyMeasurementForm {
 
         /** The entry would have no values and no note. */
         data object Empty : Validation
+
+        /** The database write failed; the form stays as it is. */
+        data object Failed : Validation
     }
 
     fun newField(type: BodyMeasurementType, storedValue: Float?, units: BodyMeasurementUnits, locale: Locale = Locale.getDefault()): FieldState {
@@ -71,8 +74,19 @@ object BodyMeasurementForm {
         return FieldState(type.code, storedValue, text, text)
     }
 
-    /** Accepts a comma or a full stop as the decimal sign. */
-    fun parse(text: String): Double? = text.trim().replace(',', '.').toDoubleOrNull()
+    /**
+     * Accepts a comma, an Arabic decimal separator or a full stop as the decimal sign, and the
+     * digits of any script, because the editor writes the numbers with the digits of the locale.
+     */
+    fun parse(text: String): Double? = buildString {
+        for (c in text.trim()) {
+            when {
+                c == ',' || c == '\u066B' -> append('.')
+                Character.isDigit(c) -> append(Character.forDigit(Character.digit(c, 10), 10))
+                else -> append(c)
+            }
+        }
+    }.toDoubleOrNull()
 
     fun outcome(field: FieldState, units: BodyMeasurementUnits): FieldOutcome {
         if (!field.isDirty) {
